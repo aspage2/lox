@@ -6,7 +6,7 @@ main: $(GOFILES)
 
 .PHONY: test
 test:
-	go test -v ./...
+	go test -coverprofile=unit.cover -v ./...
 
 .PHONY: fmt
 fmt:
