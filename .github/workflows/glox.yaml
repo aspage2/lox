@@ -2,9 +2,6 @@ name: Glox
 
 on: [push]
 
-defaults:
-  working-directory: ./glox/
-
 jobs:
   build:
 
@@ -19,4 +16,5 @@ jobs:
 
       - name: Test
         run: make test
+        working-directory: ./glox/
 
