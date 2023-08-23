@@ -1,3 +1,3 @@
-module github.com/aspage2/glox
+module glox
 
 go 1.18

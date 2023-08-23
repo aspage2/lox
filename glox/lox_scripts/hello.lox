@@ -1,0 +1,3 @@
+
+// Does lox support implicit type coercion?
+print "your score is: " + 3.22;
