@@ -30,7 +30,7 @@ func TestLexer_Next_Unicode(t *testing.T) {
 
 	assert.Equal(t, 'д', l.Next())
 	assert.Equal(t, 'о', l.Next())
-	
+
 	assert.Equal(t, 4, l.current)
 	assert.Equal(t, 0, l.lexemeStart)
 }
@@ -48,7 +48,6 @@ func TestLexer_Peek_AtEnd(t *testing.T) {
 	l.Next()
 	assert.Equal(t, utf8.RuneError, l.Peek())
 }
-
 
 func TestLexer_Peek(t *testing.T) {
 	l := NewLexer("доброе утро")

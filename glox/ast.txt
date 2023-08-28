@@ -1,0 +1,9 @@
+expression	-> :literal
+			| :unary
+			| :grouping
+			| :binary ;
+literal		-> NUMBER | STRING | "true" | "false" | "nil" ;
+grouping	-> "(" :expression ")"
+binary		-> :expression :opeartor :expression
+operator	-> "==" | "!=" | "<" | "<=" | ">" | ">=" | "+" | "-" | "*" | "/" ;
+unary		-> ("-" | "!") :expression
