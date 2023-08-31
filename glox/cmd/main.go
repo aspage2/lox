@@ -34,7 +34,7 @@ func runFromFile(l *runtime.Lox, fname string) {
 	if err != nil {
 		panic(err)
 	}
-	loxError := l.Run(string(data))
+	_, loxError := l.Run(string(data))
 	if loxError != nil {
 		os.Exit(1)
 	}

@@ -20,6 +20,16 @@ func Evaluate(expr ast.Stmt, env Environment) (any, error) {
 	return te.result, nil
 }
 
+func (te *TreeEvaluator) VisitAssignment(exp *ast.Assignment) error {
+	if err := exp.Value.Accept(te); err != nil {
+		return err
+	}
+	if !te.env.Assign(exp.Name.Lexeme, te.result) {
+		return exp.Name.MakeError("undefined variable")
+	}
+	return nil
+}
+
 func (te *TreeEvaluator) VisitBinary(exp *ast.Binary) error {
 	if err := exp.Left.Accept(te); err != nil {
 		return err

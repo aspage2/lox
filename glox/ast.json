@@ -1,5 +1,9 @@
 {
 	"Expr": {
+		"Assignment": [
+			"Name lexer.Token",
+			"Value Expr"
+		],
 		"Binary": [
 			"Left Expr",
 			"Operator lexer.Token",

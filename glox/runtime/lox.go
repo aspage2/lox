@@ -10,7 +10,8 @@ import (
 
 type Lox struct {
 	HadError bool
-	Env Environment
+	Env      Environment
+	AcceptRawExpressions bool
 }
 
 func (l *Lox) Report(err error) {
@@ -18,35 +19,39 @@ func (l *Lox) Report(err error) {
 	l.HadError = true
 }
 
-func (l *Lox) Run(line string) error {
+func (l *Lox) Run(line string) (any, error) {
 	tokens, err := lexer.ScanSource(line)
 	if err != nil {
 		switch err.(type) {
 		case *lexer.ScanError:
 			se := err.(*lexer.ScanError)
-			return &errors.LoxError{LineNumber: se.Line, Message: se.Message}
+			return nil, &errors.LoxError{LineNumber: se.Line, Message: se.Message}
 		default:
-			return err
+			return nil, err
 		}
 	}
 
 	stmts, err := parser.Parse(tokens)
 	if err != nil {
 		l.Report(err)
-		return err
+		return nil, err
 	}
-	if err := l.ExecuteStatements(stmts); err != nil {
+	last, err := l.ExecuteStatements(stmts)
+	if err != nil {
 		l.Report(err)
-		return err
+		return nil, err
 	}
-	return nil
+	return last, nil
 }
 
-func (l *Lox) ExecuteStatements(stmts []ast.Stmt) error {
+func (l *Lox) ExecuteStatements(stmts []ast.Stmt) (any, error) {
+	var last any
 	for _, s := range stmts {
-		if _, err := Evaluate(s, l.Env); err != nil {
-			return err
+		if v, err := Evaluate(s, l.Env); err != nil {
+			return nil, err
+		} else {
+			last = v
 		}
 	}
-	return nil
+	return last, nil
 }

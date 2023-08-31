@@ -106,8 +106,34 @@ func (p *RecursiveDescent) ExpressionStatement() (ast.Stmt, error) {
 	return &ast.Expression{Expression: val}, nil
 }
 
-// expression -> comparison ( ( "==" | "!=" ) comparison )*
+// expression -> equality ;
 func (p *RecursiveDescent) Expression() (ast.Expr, error) {
+	return p.Equality()
+}
+
+func (p *RecursiveDescent) Assignment() (ast.Expr, error) {
+	expr, err := p.Equality()
+	if err != nil {
+		return nil, err
+	}
+	if p.TakeIfType(lexer.EQUAL) {
+		p.Back()
+		eq := p.Next()
+		value, err := p.Assignment()
+		if err != nil {
+			return nil, err
+		}
+		if v, ok := expr.(*ast.Variable); ok {
+			return &ast.Assignment{Name: v.Name, Value: value}, nil
+		}
+		return nil, eq.MakeError("Invalid assignment target")
+	}
+	return expr, nil
+}
+
+// equality -> comparison ( ( "==" | "!=" ) comparison )*
+
+func (p *RecursiveDescent) Equality() (ast.Expr, error) {
 	return LeftAssociativeBinary(p, p.Comparison, lexer.DOUBLE_EQUAL, lexer.BANG_EQUAL)
 }
 

@@ -39,7 +39,10 @@ func interactiveShell(l *runtime.Lox) {
 			return
 		}
 
-		l.Run(data)
+		value, _ := l.Run(data)
+		if value != nil {
+			fmt.Printf("[out] -> %v\n", value)
+		}
 
 		l.HadError = false
 	}
