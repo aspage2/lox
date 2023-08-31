@@ -39,9 +39,8 @@ func interactiveShell(l *runtime.Lox) {
 			return
 		}
 
-		loxErr := l.Run(data)
-		if loxErr != nil {
-			loxErr.Report()
-		}
+		l.Run(data)
+
+		l.HadError = false
 	}
 }

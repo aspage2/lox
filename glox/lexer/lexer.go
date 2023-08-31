@@ -1,6 +1,7 @@
 package lexer
 
 import (
+	"strings"
 	"unicode/utf8"
 )
 
@@ -62,11 +63,15 @@ func (l *Lexer) Peek() rune {
 	return r
 }
 
-func (l *Lexer) Emit(typ TokenType) {
+func (l *Lexer) Emit(typ TokenType, literal any) {
+	var sb strings.Builder
+	sb.WriteString(l.source[l.lexemeStart:l.current])
+	res := sb.String()
 	t := Token{
 		Type:   typ,
 		Line:   l.line,
-		Lexeme: l.source[l.lexemeStart:l.current],
+		Lexeme: res,
+		Value:  literal,
 	}
 	l.tokens = append(l.tokens, t)
 	l.Discard()

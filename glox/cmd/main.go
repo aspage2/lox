@@ -16,10 +16,13 @@ var version string
 
 func main() {
 	l := len(os.Args)
+	lox := &runtime.Lox{
+		Env: make(runtime.Environment),
+	}
 	if l == 1 {
-		interactiveShell(&runtime.Lox{})
+		interactiveShell(lox)
 	} else if l == 2 {
-		runFromFile(&runtime.Lox{}, os.Args[1])
+		runFromFile(lox, os.Args[1])
 	} else {
 		fmt.Println("Usage: glox [filename]")
 		os.Exit(2)
@@ -33,7 +36,6 @@ func runFromFile(l *runtime.Lox, fname string) {
 	}
 	loxError := l.Run(string(data))
 	if loxError != nil {
-		loxError.Report()
 		os.Exit(1)
 	}
 

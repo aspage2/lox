@@ -2,6 +2,7 @@ package lexer
 
 import (
 	"fmt"
+	"strconv"
 	"unicode"
 )
 
@@ -25,10 +26,10 @@ func ScanSource(source string) ([]Token, error) {
 	l := NewLexer(source)
 	emitTernary := func(r rune, ifTrue TokenType, ifFalse TokenType) {
 		if l.Next() == r {
-			l.Emit(ifTrue)
+			l.Emit(ifTrue, nil)
 		} else {
 			l.Back()
-			l.Emit(ifFalse)
+			l.Emit(ifFalse, nil)
 		}
 	}
 
@@ -43,7 +44,7 @@ func ScanSource(source string) ([]Token, error) {
 
 		// -- Single Characters --
 		if typ := matchSingleChar(r); typ != NOT_INITIALIZED {
-			l.Emit(typ)
+			l.Emit(typ, nil)
 			continue
 		}
 
@@ -80,7 +81,8 @@ func ScanSource(source string) ([]Token, error) {
 			if unicode.IsLetter(l.Peek()) {
 				return nil, NewScanError(l.line, "numbers must be separated from letters by whitespace")
 			}
-			l.Emit(NUMBER)
+			v, _ := strconv.ParseFloat(l.Lexeme(), 64)
+			l.Emit(NUMBER, v)
 			continue
 		}
 
@@ -92,9 +94,9 @@ func ScanSource(source string) ([]Token, error) {
 				r2 = l.Peek()
 			}
 			if typ := matchKeyword(l.Lexeme()); typ != NOT_INITIALIZED {
-				l.Emit(typ)
+				l.Emit(typ, nil)
 			} else {
-				l.Emit(IDENT)
+				l.Emit(IDENT, nil)
 			}
 			continue
 		}
@@ -113,14 +115,14 @@ func ScanSource(source string) ([]Token, error) {
 					return nil, err
 				}
 			} else {
-				l.Emit(SLASH)
+				l.Emit(SLASH, nil)
 			}
 			continue
 		}
 
 		return nil, NewScanError(l.line, fmt.Sprintf("unexpected character: %c", r))
 	}
-	l.Emit(EOF)
+	l.Emit(EOF, nil)
 	return l.tokens, nil
 }
 
@@ -141,7 +143,7 @@ func StringLiteral(l *Lexer) error {
 	if l.IsAtEnd() {
 		return NewScanError(l.line, "unterminated string")
 	}
-	l.Emit(STRING)
+	l.Emit(STRING, l.Lexeme())
 
 	// Dump the ending double-quote
 	l.Next()

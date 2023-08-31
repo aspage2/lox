@@ -1,6 +1,9 @@
 package lexer
 
-import "fmt"
+import (
+	"fmt"
+	"glox/errors"
+)
 
 // Enum for all possible token types in the Lox grammar
 type TokenType uint64
@@ -127,8 +130,13 @@ type Token struct {
 	Type   TokenType
 	Lexeme string
 	Line   int
+	Value  any
 }
 
-func (t *Token) String() string {
+func (t Token) String() string {
 	return fmt.Sprintf("%s %s", t.Type, t.Lexeme)
+}
+
+func (t Token) MakeError(msg string) error {
+	return errors.NewLoxError(t.Line, t.Lexeme, msg)
 }

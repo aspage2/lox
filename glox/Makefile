@@ -1,14 +1,28 @@
 
 GOFILES=$(wildcard *.go)
 
-main: $(GOFILES) lexer/tokentype_string.go ast/ast_gen.go
+
+main: $(GOFILES) lexer/tokentype_string.go ast/Expr_gen.go ast/Stmt_gen.go
 	go build -o main ./cmd
 
 lexer/tokentype_string.go: lexer/tokentype.go
 	stringer -type TokenType ./lexer/
 
-ast/ast_gen.go: tool/glast/main.go
-	go run tool/glast/main.go | goimports | gofmt > ast/ast_gen.go
+ast/%_gen.go: ast.json tool/glast/main.go
+	go run tool/glast/main.go -p ast -t $(*F) ast.json > $@
+	goimports -w $@
+	gofmt -w $@
+
+
+# -------------------- PHONY Targets
+
+.PHONY: debug
+debug:
+	dlv debug --headless --listen :4040 ./cmd
+
+.PHONY: run
+run:
+	go run ./cmd
 
 .PHONY: test
 test:
@@ -22,5 +36,6 @@ fmt:
 .PHONY: clean
 clean:
 	rm -f main
-	rm -f ast/ast_gen.go
+	rm -f ast/Expr_gen.go
+	rm -f ast/Stmt_gen.go
 	rm -f lexer/tokentype_string.go

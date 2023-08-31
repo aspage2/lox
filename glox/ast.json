@@ -1,0 +1,24 @@
+{
+	"Expr": {
+		"Binary": [
+			"Left Expr",
+			"Operator lexer.Token",
+			"Right Expr"
+		],
+		"Unary": [
+			"Operator lexer.Token",
+			"Right Expr"
+		],
+		"Grouping": ["Expression Expr"],
+		"Literal": ["Value any"],
+		"Variable": ["Name lexer.Token"]
+	},
+	"Stmt": {
+		"Expression": ["Expression Expr"],
+		"Print": ["Expression Expr"],
+		"Var": [
+			"Name lexer.Token",
+			"Initializer Expr"
+		]
+	}
+}

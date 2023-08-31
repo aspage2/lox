@@ -1,30 +1,28 @@
 package main
 
 import (
+	"encoding/json"
+	"errors"
+	"flag"
 	"fmt"
+	"os"
 	"strings"
 )
 
-var AST = map[string]string{
-	"Binary":   "Left Expr, Operator lexer.Token, Right Expr",
-	"Unary":    "Operator lexer.Token, Right Expr",
-	"Grouping": "Expression Expr",
-	"Literal":  "Value lexer.Token",
-}
-
 type Generator struct {
 	strings.Builder
-	Types map[string]string
+	Name    string
+	Types   map[string][]string
+	Package string
+	Imports []string
 }
 
-func (g *Generator) packageAndImports(packageName string) {
-	fmt.Fprintf(g, "package %s\n", packageName)
+func (g *Generator) packageAndImports() {
+	fmt.Fprintf(g, "package %s\n", g.Package)
 
-	imports := []string{"glox/lexer"}
-
-	if len(imports) > 0 {
+	if len(g.Imports) > 0 {
 		g.WriteString("import (\n")
-		for _, k := range imports {
+		for _, k := range g.Imports {
 			fmt.Fprintf(g, "\t\"%s\"\n", k)
 		}
 		g.WriteString(")\n")
@@ -32,41 +30,75 @@ func (g *Generator) packageAndImports(packageName string) {
 }
 
 func (g *Generator) visitorInterface() {
-	g.WriteString("type Visitor interface {\n")
+	fmt.Fprintf(g, "type %sVisitor interface {\n", g.Name)
 	for k := range g.Types {
-		fmt.Fprintf(g, "\tVisit%s(*%s)\n", k, k)
+		fmt.Fprintf(g, "\tVisit%s(*%s) error\n", k, k)
 	}
 	g.WriteString("}\n")
 }
 
 func (g *Generator) exprInterface() {
-	g.WriteString(`
-type Expr interface {
-	Accept(Visitor)
-}
-`)
+	fmt.Fprintf(g, "type %s interface {\n", g.Name)
+	fmt.Fprintf(g, "\tAccept(%sVisitor) error\n}\n", g.Name)
 }
 
 func (g *Generator) nodeTypes() {
 	for k, v := range g.Types {
 		fmt.Fprintf(g, "type %s struct {\n", k)
 
-		for _, fld := range strings.Split(v, ",") {
+		for _, fld := range v {
 			fld = strings.TrimSpace(fld)
 			fmt.Fprintf(g, "\t%s\n", fld)
 		}
 		g.WriteString("}\n")
 
-		fmt.Fprintf(g, "func (n *%s)Accept(v Visitor) {\n\tv.Visit%s(n)\n}\n", k, k)
+		fmt.Fprintf(g, "func (n *%s) Accept(v %sVisitor) error {\n\treturn v.Visit%s(n)\n}\n", k, g.Name, k)
 	}
 }
 
-func main() {
-	g := &Generator{Types: AST}
-	g.packageAndImports("ast")
+func DefineAST(name string, types map[string][]string, pkg string, imports []string) string {
+	g := &Generator{Name: name, Types: types, Package: pkg, Imports: imports}
+	g.packageAndImports()
 	g.visitorInterface()
 	g.exprInterface()
 	g.nodeTypes()
 
-	fmt.Println(g.String())
+	return g.String()
+}
+
+type AstDefn map[string][]string
+
+func Must[V any](value V, err error) V {
+	if err != nil {
+		panic(err)
+	}
+	return value
+}
+
+func main() {
+	pkg := flag.String("p", "", "Package name")
+	name := flag.String("t", "", "type in ast file to render")
+	flag.Parse()
+	if *pkg == "" || *name == "" {
+		flag.Usage()
+		os.Exit(1)
+	}
+	fname := flag.Arg(0)
+
+	data := Must(os.ReadFile(fname))
+	var defns map[string]AstDefn
+	if err := json.Unmarshal(data, &defns); err != nil {
+		panic(err)
+	}
+	defn, ok := defns[*name]
+	if !ok {
+		panic(errors.New(*name + " is not a definition in " + fname))
+	}
+	code := DefineAST(
+		*name,
+		defn,
+		"ast",
+		[]string{"glox/lexer"},
+	)
+	fmt.Println(code)
 }
