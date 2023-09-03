@@ -2,8 +2,8 @@
 GOFILES=$(wildcard *.go)
 
 
-main: $(GOFILES) lexer/tokentype_string.go ast/Expr_gen.go ast/Stmt_gen.go
-	go build -o main ./cmd
+glox: $(GOFILES) lexer/tokentype_string.go ast/Expr_gen.go ast/Stmt_gen.go
+	go build -o glox ./cmd
 
 lexer/tokentype_string.go: lexer/tokentype.go
 	stringer -type TokenType ./lexer/
