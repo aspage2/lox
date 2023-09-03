@@ -9,8 +9,8 @@ import (
 )
 
 type Lox struct {
-	HadError bool
-	Env      Environment
+	HadError             bool
+	Env                  Environment
 	AcceptRawExpressions bool
 }
 
@@ -25,6 +25,7 @@ func (l *Lox) Run(line string) (any, error) {
 		switch err.(type) {
 		case *lexer.ScanError:
 			se := err.(*lexer.ScanError)
+			l.Report(se)
 			return nil, &errors.LoxError{LineNumber: se.Line, Message: se.Message}
 		default:
 			return nil, err

@@ -1,4 +1,11 @@
-print "hello, world";
 
-print 1 + 2;
-print !true;
+var x = "Hello, world";
+
+print x;
+
+{
+	var x = 33;
+
+	print x;
+}
+print x;

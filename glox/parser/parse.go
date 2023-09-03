@@ -27,14 +27,6 @@ func Parse(tokens []lexer.Token) ([]ast.Stmt, error) {
 	return ret, nil
 }
 
-// ParseExpression converts a sequence of tokens into a syntax
-// tree for a single expression. This is useful for interactive
-// sessions where we don't necessarily want to call print.
-func ParseExpression(tokens []lexer.Token) (ast.Expr, error) {
-	tree := &RecursiveDescent{Parser: Parser{tokens: tokens}}
-	return tree.Expression()
-}
-
 // declaration -> varDecl | statement ;
 func (p *RecursiveDescent) Declaration() (ast.Stmt, error) {
 	var f func() (ast.Stmt, error)
@@ -61,7 +53,7 @@ func (p *RecursiveDescent) VarDeclaration() (ast.Stmt, error) {
 
 	var (
 		initializer ast.Expr
-		err error
+		err         error
 	)
 	if p.TakeIfType(lexer.EQUAL) {
 		initializer, err = p.Expression()
@@ -75,12 +67,32 @@ func (p *RecursiveDescent) VarDeclaration() (ast.Stmt, error) {
 	return &ast.Var{Name: id, Initializer: initializer}, nil
 }
 
-// statement -> printStmt | exprStmt ;
+// statement -> printStmt | exprStmt | block ;
 func (p *RecursiveDescent) Statement() (ast.Stmt, error) {
 	if p.TakeIfType(lexer.PRINT) {
 		return p.PrintStatement()
 	}
+	if p.TakeIfType(lexer.LEFT_BRACE) {
+		return p.BlockStatement()
+	}
 	return p.ExpressionStatement()
+}
+
+func (p *RecursiveDescent) BlockStatement() (ast.Stmt, error) {
+	var ret []ast.Stmt
+
+	for p.Peek().Type != lexer.RIGHT_BRACE && !p.IsAtEnd() {
+		d, err := p.Declaration()
+		if err != nil {
+			return nil, err
+		}
+		ret = append(ret, d)
+	}
+	if p.Peek().Type != lexer.RIGHT_BRACE {
+		return nil, p.Next().MakeError("expect closing '}'")
+	}
+	p.Next()
+	return &ast.Block{Statements: ret}, nil
 }
 
 func (p *RecursiveDescent) PrintStatement() (ast.Stmt, error) {
@@ -100,7 +112,8 @@ func (p *RecursiveDescent) ExpressionStatement() (ast.Stmt, error) {
 	if err != nil {
 		return nil, err
 	}
-	if tok := p.Next(); tok.Type != lexer.SEMICOLON {
+	p.Next()
+	if tok := p.Next(); tok.Type != lexer.SEMICOLON && tok.Type != lexer.EOF {
 		return nil, tok.MakeError("expect ';' after value")
 	}
 	return &ast.Expression{Expression: val}, nil
@@ -108,7 +121,7 @@ func (p *RecursiveDescent) ExpressionStatement() (ast.Stmt, error) {
 
 // expression -> equality ;
 func (p *RecursiveDescent) Expression() (ast.Expr, error) {
-	return p.Equality()
+	return p.Assignment()
 }
 
 func (p *RecursiveDescent) Assignment() (ast.Expr, error) {

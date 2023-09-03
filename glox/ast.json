@@ -18,6 +18,7 @@
 		"Variable": ["Name lexer.Token"]
 	},
 	"Stmt": {
+		"Block": ["Statements []Stmt"],
 		"Expression": ["Expression Expr"],
 		"Print": ["Expression Expr"],
 		"Var": [

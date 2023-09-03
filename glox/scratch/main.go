@@ -1,23 +1,15 @@
 package main
 
 import (
-	"glox/ast"
-	"glox/lexer"
+	"fmt"
+	"os"
 )
 
 func main() {
-	e := ast.Binary{
-		Left: &ast.Unary{
-			Operator: lexer.Token{Type: lexer.MINUS, Lexeme: "-"},
-			Right:    &ast.Literal{Value: lexer.Token{Type: lexer.NUMBER, Lexeme: "123"}},
-		},
-		Right: &ast.Grouping{
-			Expression: &ast.Literal{
-				Value: lexer.Token{Type: lexer.NUMBER, Lexeme: "23.56"},
-			},
-		},
-		Operator: lexer.Token{Type: lexer.STAR, Lexeme: "*"},
+	data := make([]byte, 1)
+	_, err := os.Stdin.Read(data)
+	if err != nil {
+		fmt.Println(err)
 	}
-
-	ast.Pprint(&e)
+	fmt.Printf("%v\n", data)
 }

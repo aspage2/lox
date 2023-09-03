@@ -17,7 +17,7 @@ var version string
 func main() {
 	l := len(os.Args)
 	lox := &runtime.Lox{
-		Env: make(runtime.Environment),
+		Env: runtime.NewEnvironment(nil),
 	}
 	if l == 1 {
 		interactiveShell(lox)
@@ -38,5 +38,4 @@ func runFromFile(l *runtime.Lox, fname string) {
 	if loxError != nil {
 		os.Exit(1)
 	}
-
 }

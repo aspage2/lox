@@ -7,7 +7,7 @@ import (
 )
 
 type TreeEvaluator struct {
-	env Environment
+	env    Environment
 	result any
 }
 
@@ -139,7 +139,7 @@ func (te *TreeEvaluator) VisitLiteral(exp *ast.Literal) error {
 	return nil
 }
 func (te *TreeEvaluator) VisitVariable(exp *ast.Variable) error {
-	val, ok := te.env[exp.Name.Lexeme]
+	val, ok := te.env.Get(exp.Name.Lexeme)
 	if !ok {
 		return exp.Name.MakeError("variable undefined")
 	}
@@ -169,6 +169,17 @@ func (te *TreeEvaluator) VisitVar(stmt *ast.Var) error {
 		}
 		value = te.result
 	}
-	te.env[stmt.Name.Lexeme] = value
+	te.env.Declare(stmt.Name.Lexeme, value)
+	return nil
+}
+
+func (te *TreeEvaluator) VisitBlock(stmt *ast.Block) error {
+	te.env = te.env.EnterScope()
+	defer func() { te.env = te.env.ExitScope() }()
+	for _, s := range stmt.Statements {
+		if err := s.Accept(te); err != nil {
+			return err
+		}
+	}
 	return nil
 }
