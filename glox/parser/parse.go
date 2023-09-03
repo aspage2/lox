@@ -78,6 +78,9 @@ func (p *RecursiveDescent) Statement() (ast.Stmt, error) {
 	if p.TakeIfType(lexer.IF) {
 		return p.IfStatement()
 	}
+	if p.TakeIfType(lexer.WHILE) {
+		return p.WhileStatement()
+	}
 	return p.ExpressionStatement()
 }
 
@@ -128,6 +131,27 @@ func (p *RecursiveDescent) IfStatement() (ast.Stmt, error) {
 		Condition:  condition,
 		ThenBranch: then,
 		ElseBranch: elseStmt,
+	}, nil
+}
+
+func (p *RecursiveDescent) WhileStatement() (ast.Stmt, error) {
+	if !p.TakeIfType(lexer.LEFT_PAREN) {
+		return nil, p.Peek().MakeError("expect '(' after 'while'")
+	}
+	condition, err := p.Expression()
+	if err != nil {
+		return nil, err
+	}
+	if !p.TakeIfType(lexer.RIGHT_PAREN) {
+		return nil, p.Peek().MakeError("expect closing ')' in 'while' statement")
+	}
+	doBlock, err := p.Statement()
+	if err != nil {
+		return nil, err
+	}
+	return &ast.While{
+		Condition: condition,
+		Do: doBlock,
 	}, nil
 }
 

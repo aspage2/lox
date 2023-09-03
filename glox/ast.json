@@ -34,6 +34,10 @@
 		"Var": [
 			"Name lexer.Token",
 			"Initializer Expr"
+		],
+		"While": [
+			"Condition Expr",
+			"Do Stmt"
 		]
 	}
 }

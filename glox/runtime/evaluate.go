@@ -217,3 +217,18 @@ func (te *TreeEvaluator) VisitIf(stmt *ast.If) error {
 	}
 	return nil
 }
+
+func (te *TreeEvaluator) VisitWhile(stmt *ast.While) error {
+	if err := stmt.Condition.Accept(te); err != nil {
+		return err
+	}
+	for truthy(te.result) {
+		if err := stmt.Do.Accept(te); err != nil {
+			return err
+		}
+		if err := stmt.Condition.Accept(te); err != nil {
+			return err
+		}
+	}
+	return nil
+}
