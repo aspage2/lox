@@ -11,7 +11,7 @@ func TestLexer_NewLexer(t *testing.T) {
 	l := NewLexer("Hello")
 	assert.Equal(t, 0, l.current)
 	assert.Equal(t, 0, l.lexemeStart)
-	assert.Equal(t, 1, l.line)
+	assert.Equal(t, 1, l.currentLine)
 }
 
 func TestLexer_Next(t *testing.T) {
@@ -75,7 +75,7 @@ func TestLexer_Back(t *testing.T) {
 	l.Back()
 	assert.Equal(t, 1, l.current)
 	assert.Equal(t, 0, l.lexemeStart)
-	assert.Equal(t, 1, l.line)
+	assert.Equal(t, 1, l.currentLine)
 	assert.Equal(t, 'e', l.Peek())
 }
 
@@ -86,12 +86,13 @@ func TestLexer_Emit(t *testing.T) {
 	l.Next()
 	l.Next()
 
-	l.Emit(STRING)
+	l.Emit(STRING, "hel")
 	assert.Equal(t, 1, len(l.tokens))
 	tok := l.tokens[0]
 	assert.Equal(t, STRING, tok.Type)
 	assert.Equal(t, 1, tok.Line)
 	assert.Equal(t, "hel", tok.Lexeme)
+	assert.Equal(t, "hel", tok.Value)
 
 	assert.Equal(t, 3, l.current)
 	assert.Equal(t, 3, l.lexemeStart)
@@ -132,4 +133,24 @@ func TestLexer_Discard(t *testing.T) {
 	l.Discard()
 	assert.Equal(t, 6, l.current)
 	assert.Equal(t, 6, l.lexemeStart)
+}
+
+func TestLexer_RuneError(t *testing.T) {
+	l := NewLexer("a\xc3\x28bc")
+	l.Next()
+	assert.Equal(t, utf8.RuneError, l.Next())
+}
+
+func TestLexer_LineNumber(t *testing.T) {
+	l := NewLexer("hi\nworld!")
+	l.Next()
+	l.Next()
+	l.Next()
+	assert.Equal(t, 2, l.currentLine)
+	l.Emit(STRING, "")
+	assert.Equal(t, 1, l.tokens[0].Line)
+	l.Next()
+	l.Next()
+	l.Emit(STRING, "")
+	assert.Equal(t, 2, l.tokens[1].Line)
 }

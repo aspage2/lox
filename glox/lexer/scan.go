@@ -79,7 +79,7 @@ func ScanSource(source string) ([]Token, error) {
 				l.Next()
 			}
 			if unicode.IsLetter(l.Peek()) {
-				return nil, NewScanError(l.line, "numbers must be separated from letters by whitespace")
+				return nil, NewScanError(l.currentLine, "numbers must be separated from letters by whitespace")
 			}
 			v, _ := strconv.ParseFloat(l.Lexeme(), 64)
 			l.Emit(NUMBER, v)
@@ -120,7 +120,7 @@ func ScanSource(source string) ([]Token, error) {
 			continue
 		}
 
-		return nil, NewScanError(l.line, fmt.Sprintf("unexpected character: %c", r))
+		return nil, NewScanError(l.currentLine, fmt.Sprintf("unexpected character: %c", r))
 	}
 	l.Emit(EOF, nil)
 	return l.tokens, nil
@@ -141,7 +141,7 @@ func StringLiteral(l *Lexer) error {
 		l.Next()
 	}
 	if l.IsAtEnd() {
-		return NewScanError(l.line, "unterminated string")
+		return NewScanError(l.currentLine, "unterminated string")
 	}
 	l.Emit(STRING, l.Lexeme())
 
@@ -165,7 +165,7 @@ func BlockComment(l *Lexer) error {
 		}
 	}
 	if nestLevel > 0 {
-		return NewScanError(l.line, "unterminated block comment")
+		return NewScanError(l.currentLine, "unterminated block comment")
 	}
 	l.Discard()
 	return nil

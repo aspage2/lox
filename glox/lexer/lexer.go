@@ -10,19 +10,22 @@ type Lexer struct {
 	tokens []Token
 
 	// index of the start of current lexeme
-	lexemeStart int
+	lexemeStart     int
+	lexemeStartLine int
+
 	// width of last character
 	lastWidth int
 	// current index
 	current int
-	// line number
-	line int
+	// currentLine number
+	currentLine int
 }
 
 func NewLexer(source string) *Lexer {
 	return &Lexer{
-		source: source,
-		line:   1,
+		source:          source,
+		currentLine:     1,
+		lexemeStartLine: 1,
 	}
 }
 
@@ -37,7 +40,7 @@ func (l *Lexer) Next() rune {
 	l.lastWidth = size
 	l.current += size
 	if r == '\n' {
-		l.line += 1
+		l.currentLine += 1
 	}
 
 	return r
@@ -50,7 +53,7 @@ func (l *Lexer) Back() {
 	l.current -= l.lastWidth
 	r, _ := utf8.DecodeRuneInString(l.source[l.current:])
 	if r == '\n' {
-		l.line -= 1
+		l.currentLine -= 1
 	}
 	l.lastWidth = 0
 }
@@ -69,7 +72,7 @@ func (l *Lexer) Emit(typ TokenType, literal any) {
 	res := sb.String()
 	t := Token{
 		Type:   typ,
-		Line:   l.line,
+		Line:   l.lexemeStartLine,
 		Lexeme: res,
 		Value:  literal,
 	}
@@ -79,6 +82,7 @@ func (l *Lexer) Emit(typ TokenType, literal any) {
 
 func (l *Lexer) Discard() {
 	l.lexemeStart = l.current
+	l.lexemeStartLine = l.currentLine
 	l.lastWidth = 0
 }
 

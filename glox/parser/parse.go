@@ -151,7 +151,7 @@ func (p *RecursiveDescent) WhileStatement() (ast.Stmt, error) {
 	}
 	return &ast.While{
 		Condition: condition,
-		Do: doBlock,
+		Do:        doBlock,
 	}, nil
 }
 
