@@ -9,6 +9,11 @@
 			"Operator lexer.Token",
 			"Right Expr"
 		],
+		"Logical": [
+			"Left Expr",
+			"Operator lexer.Token",
+			"Right Expr"
+		],
 		"Unary": [
 			"Operator lexer.Token",
 			"Right Expr"

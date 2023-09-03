@@ -30,6 +30,27 @@ func (te *TreeEvaluator) VisitAssignment(exp *ast.Assignment) error {
 	return nil
 }
 
+func (te *TreeEvaluator) VisitLogical(exp *ast.Logical) error {
+	if err := exp.Left.Accept(te); err != nil {
+		return err
+	}
+	leftTruthy := truthy(te.result)
+	switch exp.Operator.Type {
+	case lexer.OR:
+		if leftTruthy {
+			te.result = true
+			return nil
+		}
+	case lexer.AND:
+		if !leftTruthy {
+			te.result = false
+			return nil
+		}
+	}
+
+	return exp.Right.Accept(te)
+}
+
 func (te *TreeEvaluator) VisitBinary(exp *ast.Binary) error {
 	if err := exp.Left.Accept(te); err != nil {
 		return err

@@ -67,7 +67,7 @@ func (p *RecursiveDescent) VarDeclaration() (ast.Stmt, error) {
 	return &ast.Var{Name: id, Initializer: initializer}, nil
 }
 
-// statement -> printStmt | exprStmt | block ;
+// statement -> printStmt | block | ifStmt | exprStmt ;
 func (p *RecursiveDescent) Statement() (ast.Stmt, error) {
 	if p.TakeIfType(lexer.PRINT) {
 		return p.PrintStatement()
@@ -81,9 +81,10 @@ func (p *RecursiveDescent) Statement() (ast.Stmt, error) {
 	return p.ExpressionStatement()
 }
 
+// block -> "{" declaration* "}" ;
 func (p *RecursiveDescent) BlockStatement() (ast.Stmt, error) {
 	var ret []ast.Stmt
-        
+
 	for !p.MatchType(lexer.RIGHT_BRACE) && !p.IsAtEnd() {
 		d, err := p.Declaration()
 		if err != nil {
@@ -98,6 +99,7 @@ func (p *RecursiveDescent) BlockStatement() (ast.Stmt, error) {
 	return &ast.Block{Statements: ret}, nil
 }
 
+// ifStmt -> "if" "(" expression ")" statement ("else" statement)? ;
 func (p *RecursiveDescent) IfStatement() (ast.Stmt, error) {
 	if !p.TakeIfType(lexer.LEFT_PAREN) {
 		return nil, p.Peek().MakeError("expect '(' after 'if'")
@@ -123,12 +125,13 @@ func (p *RecursiveDescent) IfStatement() (ast.Stmt, error) {
 		}
 	}
 	return &ast.If{
-		Condition: condition,
+		Condition:  condition,
 		ThenBranch: then,
 		ElseBranch: elseStmt,
 	}, nil
 }
 
+// PrintStatement -> "print" expression ";"
 func (p *RecursiveDescent) PrintStatement() (ast.Stmt, error) {
 	val, err := p.Expression()
 	if err != nil {
@@ -158,7 +161,7 @@ func (p *RecursiveDescent) Expression() (ast.Expr, error) {
 }
 
 func (p *RecursiveDescent) Assignment() (ast.Expr, error) {
-	expr, err := p.Equality()
+	expr, err := p.Or()
 	if err != nil {
 		return nil, err
 	}
@@ -177,8 +180,16 @@ func (p *RecursiveDescent) Assignment() (ast.Expr, error) {
 	return expr, nil
 }
 
-// equality -> comparison ( ( "==" | "!=" ) comparison )*
+// logic_or -> logic_and ("or" logic_and)* ;
+func (p *RecursiveDescent) Or() (ast.Expr, error) {
+	return LeftAssociativeLogical(p, p.And, lexer.OR)
+}
 
+func (p *RecursiveDescent) And() (ast.Expr, error) {
+	return LeftAssociativeLogical(p, p.Equality, lexer.AND)
+}
+
+// equality -> comparison ( ( "==" | "!=" ) comparison )*
 func (p *RecursiveDescent) Equality() (ast.Expr, error) {
 	return LeftAssociativeBinary(p, p.Comparison, lexer.DOUBLE_EQUAL, lexer.BANG_EQUAL)
 }
