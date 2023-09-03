@@ -183,3 +183,16 @@ func (te *TreeEvaluator) VisitBlock(stmt *ast.Block) error {
 	}
 	return nil
 }
+
+func (te *TreeEvaluator) VisitIf(stmt *ast.If) error {
+	if err := stmt.Condition.Accept(te); err != nil {
+		return err
+	}
+
+	if truthy(te.result) {
+		return stmt.ThenBranch.Accept(te)
+	} else if stmt.ElseBranch != nil {
+		return stmt.ElseBranch.Accept(te)
+	}
+	return nil
+}

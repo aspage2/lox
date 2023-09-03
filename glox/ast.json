@@ -20,6 +20,11 @@
 	"Stmt": {
 		"Block": ["Statements []Stmt"],
 		"Expression": ["Expression Expr"],
+		"If": [
+			"Condition Expr",
+			"ThenBranch Stmt",
+			"ElseBranch Stmt"
+		],
 		"Print": ["Expression Expr"],
 		"Var": [
 			"Name lexer.Token",

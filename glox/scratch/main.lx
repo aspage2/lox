@@ -1,0 +1,7 @@
+
+var score = 12;
+
+var impression = "bad";
+if (score > 20) impression = "good";
+
+print "Wow, that score is " + impression ;

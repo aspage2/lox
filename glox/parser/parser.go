@@ -31,13 +31,20 @@ func (p *Parser) Back() {
 	}
 }
 
-func (p *Parser) TakeIfType(types ...lexer.TokenType) bool {
-	n := p.Next()
-	for _, typ := range types {
-		if typ == n.Type {
+func (p *Parser) MatchType(types ...lexer.TokenType) bool {
+	typ := p.Peek().Type
+	for _, t := range types {
+		if t == typ {
 			return true
 		}
 	}
-	p.Back()
 	return false
+}
+
+func (p *Parser) TakeIfType(types ...lexer.TokenType) bool {
+	if !p.MatchType(types...) {
+		return false
+	}
+	p.Next()
+	return true
 }

@@ -75,24 +75,58 @@ func (p *RecursiveDescent) Statement() (ast.Stmt, error) {
 	if p.TakeIfType(lexer.LEFT_BRACE) {
 		return p.BlockStatement()
 	}
+	if p.TakeIfType(lexer.IF) {
+		return p.IfStatement()
+	}
 	return p.ExpressionStatement()
 }
 
 func (p *RecursiveDescent) BlockStatement() (ast.Stmt, error) {
 	var ret []ast.Stmt
-
-	for p.Peek().Type != lexer.RIGHT_BRACE && !p.IsAtEnd() {
+        
+	for !p.MatchType(lexer.RIGHT_BRACE) && !p.IsAtEnd() {
 		d, err := p.Declaration()
 		if err != nil {
 			return nil, err
 		}
 		ret = append(ret, d)
 	}
-	if p.Peek().Type != lexer.RIGHT_BRACE {
-		return nil, p.Next().MakeError("expect closing '}'")
+	if !p.MatchType(lexer.RIGHT_BRACE) {
+		return nil, p.Peek().MakeError("expect closing '}'")
 	}
 	p.Next()
 	return &ast.Block{Statements: ret}, nil
+}
+
+func (p *RecursiveDescent) IfStatement() (ast.Stmt, error) {
+	if !p.TakeIfType(lexer.LEFT_PAREN) {
+		return nil, p.Peek().MakeError("expect '(' after 'if'")
+	}
+	condition, err := p.Expression()
+	if err != nil {
+		return nil, err
+	}
+	if !p.TakeIfType(lexer.RIGHT_PAREN) {
+		return nil, p.Peek().MakeError("expect closing ')' in 'if' statement")
+	}
+	then, err := p.Statement()
+	if err != nil {
+		return nil, err
+	}
+	var (
+		elseStmt ast.Stmt
+	)
+	if p.TakeIfType(lexer.ELSE) {
+		elseStmt, err = p.Statement()
+		if err != nil {
+			return nil, err
+		}
+	}
+	return &ast.If{
+		Condition: condition,
+		ThenBranch: then,
+		ElseBranch: elseStmt,
+	}, nil
 }
 
 func (p *RecursiveDescent) PrintStatement() (ast.Stmt, error) {
@@ -112,7 +146,6 @@ func (p *RecursiveDescent) ExpressionStatement() (ast.Stmt, error) {
 	if err != nil {
 		return nil, err
 	}
-	p.Next()
 	if tok := p.Next(); tok.Type != lexer.SEMICOLON && tok.Type != lexer.EOF {
 		return nil, tok.MakeError("expect ';' after value")
 	}
