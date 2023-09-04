@@ -16,8 +16,7 @@ jobs:
 
       - name: Test
         run: |
-          go install golang.org/x/tool/goimports/cmd@latest
-          go install golang.org/x/tool/gofmt/cmd@latest
+          go install golang.org/x/tools/cmd/goimports@latest
           make stubs
           make test
         working-directory: ./glox/
