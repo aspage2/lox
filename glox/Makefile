@@ -16,6 +16,10 @@ ast/%_gen.go: ast.json tool/glast/main.go
 
 # -------------------- PHONY Targets
 
+.PHONY: stubs
+stubs:
+	$(MAKE) lexer/tokentype_string.go ast/Expr_gen.go ast/Stmt_gen.go
+
 .PHONY: debug
 debug:
 	dlv debug --headless --listen :4040 ./cmd
