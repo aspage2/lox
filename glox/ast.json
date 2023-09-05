@@ -24,6 +24,7 @@
 	},
 	"Stmt": {
 		"Block": ["Statements []Stmt"],
+		"Break": ["Continue bool"],
 		"Expression": ["Expression Expr"],
 		"If": [
 			"Condition Expr",

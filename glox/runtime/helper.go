@@ -25,3 +25,15 @@ func checkNumeric(vals ...any) bool {
 	}
 	return true
 }
+
+type BreakError struct {
+	Continue bool
+}
+
+func (e BreakError) Error() string {
+	if e.Continue {
+		return "continue statement"
+	} else {
+		return "break statement"
+	}
+}

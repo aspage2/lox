@@ -224,6 +224,10 @@ func (te *TreeEvaluator) VisitWhile(stmt *ast.While) error {
 	}
 	for truthy(te.result) {
 		if err := stmt.Do.Accept(te); err != nil {
+			switch err.(type) {
+			case *BreakError:
+				return nil
+			}
 			return err
 		}
 		if err := stmt.Condition.Accept(te); err != nil {
@@ -232,3 +236,8 @@ func (te *TreeEvaluator) VisitWhile(stmt *ast.While) error {
 	}
 	return nil
 }
+
+func (te *TreeEvaluator) VisitBreak(stmt *ast.Break) error {
+	return &BreakError{stmt.Continue}
+}
+

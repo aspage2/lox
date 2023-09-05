@@ -1,7 +1,14 @@
 
-var score = 12;
 
-var impression = "bad";
-if (score > 20) impression = "good";
+var i = 0;
 
-print "Wow, that score is " + impression ;
+while (i < 10) {
+	print "I is: ";
+	print i;
+	if (i == 5) {
+		print "breaking";
+		break;
+	}
+	i = i + 1;
+}
+print "done";

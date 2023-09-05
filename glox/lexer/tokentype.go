@@ -56,6 +56,8 @@ const (
 	TRUE
 	VAR
 	WHILE
+	BREAK
+	CONTINUE
 
 	EOF
 )
@@ -122,6 +124,10 @@ func matchKeyword(s string) TokenType {
 		return VAR
 	case "while":
 		return WHILE
+	case "break":
+		return BREAK
+	case "continue":
+		return CONTINUE
 	}
 	return NOT_INITIALIZED
 }

@@ -84,7 +84,20 @@ func (p *RecursiveDescent) Statement() (ast.Stmt, error) {
 	if p.TakeIfType(lexer.WHILE) {
 		return p.WhileStatement()
 	}
+	if p.TakeIfType(lexer.BREAK) {
+		return p.BreakStatement(false)
+	}
+	if p.TakeIfType(lexer.CONTINUE) {
+		return p.BreakStatement(true)
+	}
 	return p.ExpressionStatement()
+}
+
+func (p *RecursiveDescent) BreakStatement(cont bool) (ast.Stmt, error) {
+	if !p.TakeIfType(lexer.SEMICOLON) {
+		return nil, p.Peek().MakeError("expect ';' after break/continue")
+	}
+	return &ast.Break{Continue: cont}, nil
 }
 
 func (p *RecursiveDescent) ForStatement() (ast.Stmt, error) {
