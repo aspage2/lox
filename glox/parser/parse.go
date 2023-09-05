@@ -78,10 +78,87 @@ func (p *RecursiveDescent) Statement() (ast.Stmt, error) {
 	if p.TakeIfType(lexer.IF) {
 		return p.IfStatement()
 	}
+	if p.TakeIfType(lexer.FOR) {
+		return p.ForStatement()
+	}
 	if p.TakeIfType(lexer.WHILE) {
 		return p.WhileStatement()
 	}
 	return p.ExpressionStatement()
+}
+
+func (p *RecursiveDescent) ForStatement() (ast.Stmt, error) {
+	if !p.TakeIfType(lexer.LEFT_PAREN) {
+		return nil, p.Peek().MakeError("expect '(' after 'for'")
+	}
+	var (
+		initializer ast.Stmt
+		condition   ast.Expr
+		increment   ast.Expr
+		err         error
+	)
+	if p.TakeIfType(lexer.SEMICOLON) {
+		initializer = nil
+	} else if p.TakeIfType(lexer.VAR) {
+		initializer, err = p.VarDeclaration()
+		if err != nil {
+			return nil, err
+		}
+	} else {
+		initializer, err = p.ExpressionStatement()
+		if err != nil {
+			return nil, err
+		}
+	}
+
+	if p.TakeIfType(lexer.SEMICOLON) {
+		condition = nil
+	} else {
+		condition, err = p.Expression()
+		if err != nil {
+			return nil, err
+		}
+	}
+	if !p.TakeIfType(lexer.SEMICOLON) {
+		return nil, p.Peek().MakeError("expect ';' after loop condition")
+	}
+
+	if p.TakeIfType(lexer.SEMICOLON) {
+		increment = nil
+	} else {
+		increment, err = p.Expression()
+		if err != nil {
+			return nil, err
+		}
+	}
+	if !p.TakeIfType(lexer.RIGHT_PAREN) {
+		return nil, p.Peek().MakeError("expected ')'")
+	}
+	body, err := p.Statement()
+	if err != nil {
+		return nil, err
+	}
+
+	if increment != nil {
+		body = &ast.Block{Statements: []ast.Stmt{
+			body,
+			&ast.Expression{Expression: increment},
+		}}
+	}
+	if condition == nil {
+		condition = &ast.Literal{Value: true}
+	}
+	body = &ast.While{
+		Condition: condition,
+		Do:        body,
+	}
+
+	if initializer != nil {
+		body = &ast.Block{Statements: []ast.Stmt{
+			initializer, body,
+		}}
+	}
+	return body, nil
 }
 
 // block -> "{" declaration* "}" ;
