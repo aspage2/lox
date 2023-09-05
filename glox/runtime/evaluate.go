@@ -240,4 +240,3 @@ func (te *TreeEvaluator) VisitWhile(stmt *ast.While) error {
 func (te *TreeEvaluator) VisitBreak(stmt *ast.Break) error {
 	return &BreakError{stmt.Continue}
 }
-
