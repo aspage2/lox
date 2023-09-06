@@ -127,7 +127,10 @@ func TestBinary_Plus_NonAlphaNum(t *testing.T) {
 }
 
 func TestTruthy(t *testing.T) {
-	cases := []struct{Arg any; Exp bool}{
+	cases := []struct {
+		Arg any
+		Exp bool
+	}{
 		{"", false},
 		{"a", true},
 		{0, false},
@@ -148,7 +151,6 @@ func TestTruthy(t *testing.T) {
 // -------------------------------------
 //  BINARY LOGICAL EXPRESSIONS
 // -------------------------------------
-
 
 // -------------------------------------
 //  UNARY EXPRESSIONS
@@ -178,7 +180,7 @@ func assertUnaryExprErrs(t *testing.T, v any, op lexer.TokenType) {
 }
 
 func TestUnary(t *testing.T) {
-	testCases := []struct{
+	testCases := []struct {
 		Operand any
 		Op      lexer.TokenType
 		Exp     any
@@ -204,7 +206,7 @@ func TestVariable(t *testing.T) {
 	env.Declare("x", 33)
 	v := &ast.Variable{
 		Name: lexer.Token{
-			Type: lexer.IDENT,
+			Type:   lexer.IDENT,
 			Lexeme: "x",
 		},
 	}
@@ -217,7 +219,7 @@ func TestVariable_Err(t *testing.T) {
 	env := NewEnvironment(nil)
 	v := &ast.Variable{
 		Name: lexer.Token{
-			Type: lexer.IDENT,
+			Type:   lexer.IDENT,
 			Lexeme: "x",
 		},
 	}
@@ -225,4 +227,3 @@ func TestVariable_Err(t *testing.T) {
 	assert.Error(t, v.Accept(te))
 
 }
-
