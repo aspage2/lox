@@ -288,7 +288,12 @@ func (te *TreeEvaluator) VisitCall(expr *ast.Call) error {
 }
 
 func (te *TreeEvaluator) VisitFunction(stmt *ast.Function) error {
-	fn := &LoxFunction{Declaration: stmt}
+	// Capture the current executing environment as a "closure".
+	// This means that variables defined locally to the calling
+	// block will be captured by this function object, allowing us
+	// to exit this function scope without losing access to the
+	// variables.
+	fn := &LoxFunction{Declaration: stmt, Closure: te.env}
 	te.env.Declare(stmt.Name.Lexeme, fn)
 	return nil
 }
