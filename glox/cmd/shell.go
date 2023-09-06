@@ -42,11 +42,15 @@ func interactiveShell(l *runtime.Lox) {
 		if data == ":q" {
 			goodbyeMessage()
 			return
+		} else if data == ":g" {
+			fmt.Println(l.Globals)
+			continue
 		}
 
 		value, _ := l.Run(data)
 		if value != nil {
 			fmt.Printf("[out] -> %v\n", value)
+			fmt.Printf(" :: %T\n", value)
 		}
 
 		l.HadError = false

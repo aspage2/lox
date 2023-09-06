@@ -16,9 +16,7 @@ var version string
 
 func main() {
 	l := len(os.Args)
-	lox := &runtime.Lox{
-		Env: runtime.NewEnvironment(nil),
-	}
+	lox := runtime.NewLoxInterpreter()
 	if l == 1 {
 		interactiveShell(lox)
 	} else if l == 2 {

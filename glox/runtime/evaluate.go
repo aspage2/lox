@@ -7,17 +7,39 @@ import (
 )
 
 type TreeEvaluator struct {
-	env    Environment
-	result any
+	BaseEnv *Environment
+	env     *Environment
+	result  any
 }
 
-func Evaluate(expr ast.Stmt, env Environment) (any, error) {
-	te := &TreeEvaluator{env: env}
+func NewTreeEvaluator(env *Environment) *TreeEvaluator {
+	return &TreeEvaluator{
+		BaseEnv: env,
+		env:     env,
+	}
+}
+
+func (te *TreeEvaluator) Evaluate(expr ast.Stmt) (any, error) {
 	err := expr.Accept(te)
 	if err != nil {
 		return nil, err
 	}
 	return te.result, nil
+}
+
+func (te *TreeEvaluator) ExecuteStatementsWithEnv(stmts []ast.Stmt, env *Environment) (any, error) {
+	prev := te.env
+	te.env = env
+	defer func() { te.env = prev }()
+	var last any
+	for _, s := range stmts {
+		if v, err := te.Evaluate(s); err != nil {
+			return nil, err
+		} else {
+			last = v
+		}
+	}
+	return last, nil
 }
 
 func (te *TreeEvaluator) VisitAssignment(exp *ast.Assignment) error {
@@ -78,7 +100,7 @@ func (te *TreeEvaluator) VisitBinary(exp *ast.Binary) error {
 		if !checkNumeric(left, right) {
 			return exp.Operator.MakeError("operator '<=' requires numbers")
 		}
-		te.result = left.(float64) >= right.(float64)
+		te.result = left.(float64) <= right.(float64)
 		return nil
 	case lexer.GTE:
 		if !checkNumeric(left, right) {
@@ -239,4 +261,41 @@ func (te *TreeEvaluator) VisitWhile(stmt *ast.While) error {
 
 func (te *TreeEvaluator) VisitBreak(stmt *ast.Break) error {
 	return &BreakError{stmt.Continue}
+}
+
+func (te *TreeEvaluator) VisitCall(expr *ast.Call) error {
+	if err := expr.Callee.Accept(te); err != nil {
+		return err
+	}
+	callee := te.result
+	f, ok := callee.(Callable)
+	if !ok {
+		return expr.ClosingParen.MakeError("can only call functions and classes")
+	}
+	if len(expr.Args) != f.Arity() {
+		return expr.ClosingParen.MakeError(fmt.Sprintf("Expect %d args, found %d", f.Arity(), len(expr.Args)))
+	}
+	args := make([]any, len(expr.Args))
+	for i, a := range expr.Args {
+		if err := a.Accept(te); err != nil {
+			return err
+		}
+		args[i] = te.result
+	}
+	var err error
+	te.result, err = f.Call(te, args)
+	return err
+}
+
+func (te *TreeEvaluator) VisitFunction(stmt *ast.Function) error {
+	fn := &LoxFunction{Declaration: stmt}
+	te.env.Declare(stmt.Name.Lexeme, fn)
+	return nil
+}
+
+func (te *TreeEvaluator) VisitReturn(stmt *ast.Return) error {
+	if err := stmt.Expression.Accept(te); err != nil {
+		return err
+	}
+	return &ReturnError{Value: te.result}
 }

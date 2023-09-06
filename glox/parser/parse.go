@@ -1,6 +1,7 @@
 package parser
 
 import (
+	"fmt"
 	"glox/ast"
 	"glox/lexer"
 )
@@ -30,7 +31,9 @@ func Parse(tokens []lexer.Token) ([]ast.Stmt, error) {
 // declaration -> varDecl | statement ;
 func (p *RecursiveDescent) Declaration() (ast.Stmt, error) {
 	var f func() (ast.Stmt, error)
-	if p.TakeIfType(lexer.VAR) {
+	if p.TakeIfType(lexer.FUN) {
+		f = func() (ast.Stmt, error) { return p.FunctionDeclaration("function") }
+	} else if p.TakeIfType(lexer.VAR) {
 		f = p.VarDeclaration
 	} else {
 		f = p.Statement
@@ -41,6 +44,49 @@ func (p *RecursiveDescent) Declaration() (ast.Stmt, error) {
 		return nil, err
 	}
 	return s, nil
+}
+
+func (p *RecursiveDescent) FunctionDeclaration(kind string) (ast.Stmt, error) {
+	if !p.MatchType(lexer.IDENT) {
+		return nil, p.Peek().MakeError(fmt.Sprintf("Expect %s name", kind))
+	}
+	name := p.Next()
+	if !p.TakeIfType(lexer.LEFT_PAREN) {
+		return nil, p.Peek().MakeError("Expect '(' after function name in declaration")
+	}
+	params := make([]lexer.Token, 0)
+	if !p.MatchType(lexer.RIGHT_PAREN) {
+		for {
+			if len(params) > 255 {
+				fmt.Println(p.Peek().MakeError("can't have more than 255 parameters").Error())
+			}
+			tok := p.Next()
+			if tok.Type != lexer.IDENT {
+				return nil, tok.MakeError("expect parameter name")
+			}
+			params = append(params, tok)
+			if !p.TakeIfType(lexer.COMMA) {
+				break
+			}
+		}
+	}
+	if !p.TakeIfType(lexer.RIGHT_PAREN) {
+		return nil, p.Peek().MakeError("expect closing ')' in function declaration")
+	}
+
+	if !p.TakeIfType(lexer.LEFT_BRACE) {
+		return nil, p.Peek().MakeError("expect opening '{' in function declaration")
+	}
+
+	body, err := p.BlockStatement()
+	if err != nil {
+		return nil, err
+	}
+	return &ast.Function{
+		Name:   name,
+		Params: params,
+		Body:   body.(*ast.Block).Statements,
+	}, nil
 }
 
 // varDecl -> "var" IDENTIFIER ("=" expression)? ";" ;
@@ -89,6 +135,9 @@ func (p *RecursiveDescent) Statement() (ast.Stmt, error) {
 	}
 	if p.TakeIfType(lexer.CONTINUE) {
 		return p.BreakStatement(true)
+	}
+	if p.TakeIfType(lexer.RETURN) {
+		return p.ReturnStatement()
 	}
 	return p.ExpressionStatement()
 }
@@ -337,7 +386,46 @@ func (p *RecursiveDescent) Unary() (ast.Expr, error) {
 			Right:    re,
 		}, nil
 	}
-	return p.Primary()
+	return p.Call()
+}
+
+func (p *RecursiveDescent) Call() (ast.Expr, error) {
+	var (
+		callee ast.Expr
+		err    error
+	)
+	callee, err = p.Primary()
+	if err != nil {
+		return nil, err
+	}
+	for p.TakeIfType(lexer.LEFT_PAREN) {
+		args := make([]ast.Expr, 0)
+		if !p.MatchType(lexer.RIGHT_PAREN) {
+			for {
+				if len(args) > 255 {
+					fmt.Println(p.Peek().MakeError("can't have more than 255 args").Error())
+				}
+				expr, err := p.Expression()
+				if err != nil {
+					return nil, err
+				}
+				args = append(args, expr)
+				if !p.TakeIfType(lexer.COMMA) {
+					break
+				}
+			}
+		}
+		tok := p.Next()
+		if tok.Type != lexer.RIGHT_PAREN {
+			return nil, tok.MakeError("expect closing ')' in function call")
+		}
+		callee = &ast.Call{
+			Callee:       callee,
+			ClosingParen: tok,
+			Args:         args,
+		}
+	}
+	return callee, nil
 }
 
 // primary -> "true" | "false" | "nil" | NUMBER | STRING | "(" expression ")" | IDENT ;
@@ -391,4 +479,21 @@ func (p *RecursiveDescent) synchronize() {
 		}
 		prevType = p.Next().Type
 	}
+}
+
+func (p *RecursiveDescent) ReturnStatement() (ast.Stmt, error) {
+	p.Back()
+	tok := p.Next()
+	var value ast.Expr
+	var err error
+	if !p.MatchType(lexer.SEMICOLON) {
+		value, err = p.Expression()
+		if err != nil {
+			return nil, err
+		}
+	}
+	if !p.TakeIfType(lexer.SEMICOLON) {
+		return nil, p.Peek().MakeError("expect ';' after return")
+	}
+	return &ast.Return{Token: tok, Expression: value}, nil
 }

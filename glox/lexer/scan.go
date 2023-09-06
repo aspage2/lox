@@ -87,9 +87,9 @@ func ScanSource(source string) ([]Token, error) {
 		}
 
 		// Idents
-		if unicode.IsLetter(r) {
+		if unicode.IsLetter(r) || r == '_' {
 			r2 := l.Peek()
-			for unicode.IsDigit(r2) || unicode.IsLetter(r2) && !l.IsAtEnd() {
+			for unicode.IsDigit(r2) || unicode.IsLetter(r2) || r2 == '_' && !l.IsAtEnd() {
 				l.Next()
 				r2 = l.Peek()
 			}

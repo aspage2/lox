@@ -1,5 +1,5 @@
 
-GOFILES=$(wildcard *.go)
+GOFILES=$(shell find . -type f -name '*.go')
 
 
 build/glox: $(GOFILES) lexer/tokentype_string.go ast/Expr_gen.go ast/Stmt_gen.go
@@ -30,7 +30,7 @@ run:
 
 .PHONY: test
 test:
-	go test -coverprofile=unit.cover -v ./...
+	go test -coverprofile=unit.cover  ./...
 
 .PHONY: fmt
 fmt:

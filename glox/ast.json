@@ -9,6 +9,11 @@
 			"Operator lexer.Token",
 			"Right Expr"
 		],
+		"Call": [
+			"Callee Expr",
+			"ClosingParen lexer.Token",
+			"Args []Expr"
+		],
 		"Logical": [
 			"Left Expr",
 			"Operator lexer.Token",
@@ -26,12 +31,18 @@
 		"Block": ["Statements []Stmt"],
 		"Break": ["Continue bool"],
 		"Expression": ["Expression Expr"],
+		"Function": [
+			"Name lexer.Token",
+			"Params []lexer.Token",
+			"Body []Stmt"
+		],
 		"If": [
 			"Condition Expr",
 			"ThenBranch Stmt",
 			"ElseBranch Stmt"
 		],
 		"Print": ["Expression Expr"],
+		"Return": ["Expression Expr", "Token lexer.Token"],
 		"Var": [
 			"Name lexer.Token",
 			"Initializer Expr"

@@ -2,16 +2,23 @@ package runtime
 
 import (
 	"fmt"
-	"glox/ast"
 	"glox/errors"
 	"glox/lexer"
 	"glox/parser"
 )
 
 type Lox struct {
-	HadError             bool
-	Env                  Environment
-	AcceptRawExpressions bool
+	HadError bool
+	Globals  *Environment
+}
+
+func NewLoxInterpreter() *Lox {
+	globals := NewEnvironment(nil)
+	DefineNativeFunctions(globals)
+	return &Lox{
+		Globals:  globals,
+		HadError: false,
+	}
 }
 
 func (l *Lox) Report(err error) {
@@ -37,22 +44,11 @@ func (l *Lox) Run(line string) (any, error) {
 		l.Report(err)
 		return nil, err
 	}
-	last, err := l.ExecuteStatements(stmts)
+	te := NewTreeEvaluator(l.Globals)
+	last, err := te.ExecuteStatementsWithEnv(stmts, te.BaseEnv)
 	if err != nil {
 		l.Report(err)
 		return nil, err
-	}
-	return last, nil
-}
-
-func (l *Lox) ExecuteStatements(stmts []ast.Stmt) (any, error) {
-	var last any
-	for _, s := range stmts {
-		if v, err := Evaluate(s, l.Env); err != nil {
-			return nil, err
-		} else {
-			last = v
-		}
 	}
 	return last, nil
 }
