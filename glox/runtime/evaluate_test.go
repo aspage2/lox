@@ -11,13 +11,13 @@ import (
 
 func makeBinaryExp(l, r any, op lexer.TokenType) *ast.Binary {
 	return &ast.Binary{
-		Left: &ast.Literal{Value: l},
+		Left:  &ast.Literal{Value: l},
 		Right: &ast.Literal{Value: r},
 		Operator: lexer.Token{
-			Type: op,
-			Value: nil,
+			Type:   op,
+			Value:  nil,
 			Lexeme: op.String(),
-			Line: 1,
+			Line:   1,
 		},
 	}
 }
