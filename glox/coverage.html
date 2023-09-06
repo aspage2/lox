@@ -1,0 +1,1169 @@
+
+<!DOCTYPE html>
+<html>
+	<head>
+		<meta http-equiv="Content-Type" content="text/html; charset=utf-8">
+		<title>lexer: Go Coverage Report</title>
+		<style>
+			body {
+				background: black;
+				color: rgb(80, 80, 80);
+			}
+			body, pre, #legend span {
+				font-family: Menlo, monospace;
+				font-weight: bold;
+			}
+			#topbar {
+				background: black;
+				position: fixed;
+				top: 0; left: 0; right: 0;
+				height: 42px;
+				border-bottom: 1px solid rgb(80, 80, 80);
+			}
+			#content {
+				margin-top: 50px;
+			}
+			#nav, #legend {
+				float: left;
+				margin-left: 10px;
+			}
+			#legend {
+				margin-top: 12px;
+			}
+			#nav {
+				margin-top: 10px;
+			}
+			#legend span {
+				margin: 0 5px;
+			}
+			.cov0 { color: rgb(192, 0, 0) }
+.cov1 { color: rgb(128, 128, 128) }
+.cov2 { color: rgb(116, 140, 131) }
+.cov3 { color: rgb(104, 152, 134) }
+.cov4 { color: rgb(92, 164, 137) }
+.cov5 { color: rgb(80, 176, 140) }
+.cov6 { color: rgb(68, 188, 143) }
+.cov7 { color: rgb(56, 200, 146) }
+.cov8 { color: rgb(44, 212, 149) }
+.cov9 { color: rgb(32, 224, 152) }
+.cov10 { color: rgb(20, 236, 155) }
+
+		</style>
+	</head>
+	<body>
+		<div id="topbar">
+			<div id="nav">
+				<select id="files">
+				
+				<option value="file0">glox/lexer/lexer.go (94.1%)</option>
+				
+				<option value="file1">glox/lexer/scan.go (87.4%)</option>
+				
+				<option value="file2">glox/lexer/tokentype.go (32.4%)</option>
+				
+				<option value="file3">glox/lexer/tokentype_string.go (0.0%)</option>
+				
+				<option value="file4">glox/runtime/callable.go (0.0%)</option>
+				
+				<option value="file5">glox/runtime/environment.go (68.8%)</option>
+				
+				<option value="file6">glox/runtime/error.go (0.0%)</option>
+				
+				<option value="file7">glox/runtime/evaluate.go (38.0%)</option>
+				
+				<option value="file8">glox/runtime/gocallable.go (0.0%)</option>
+				
+				<option value="file9">glox/runtime/helper.go (81.8%)</option>
+				
+				<option value="file10">glox/runtime/lox.go (0.0%)</option>
+				
+				<option value="file11">glox/runtime/loxcallable.go (0.0%)</option>
+				
+				</select>
+			</div>
+			<div id="legend">
+				<span>not tracked</span>
+			
+				<span class="cov0">not covered</span>
+				<span class="cov8">covered</span>
+			
+			</div>
+		</div>
+		<div id="content">
+		
+		<pre class="file" id="file0" style="display: none">package lexer
+
+import (
+        "strings"
+        "unicode/utf8"
+)
+
+type Lexer struct {
+        source string
+        tokens []Token
+
+        // index of the start of current lexeme
+        lexemeStart     int
+        lexemeStartLine int
+
+        // width of last character
+        lastWidth int
+        // current index
+        current int
+        // currentLine number
+        currentLine int
+}
+
+func NewLexer(source string) *Lexer <span class="cov8" title="1">{
+        return &amp;Lexer{
+                source:          source,
+                currentLine:     1,
+                lexemeStartLine: 1,
+        }
+}</span>
+
+func (l *Lexer) Next() rune <span class="cov8" title="1">{
+        if l.IsAtEnd() </span><span class="cov8" title="1">{
+                return utf8.RuneError
+        }</span>
+        <span class="cov8" title="1">r, size := utf8.DecodeRuneInString(l.source[l.current:])
+        if r == utf8.RuneError </span><span class="cov8" title="1">{
+                return r
+        }</span>
+        <span class="cov8" title="1">l.lastWidth = size
+        l.current += size
+        if r == '\n' </span><span class="cov8" title="1">{
+                l.currentLine += 1
+        }</span>
+
+        <span class="cov8" title="1">return r</span>
+}
+
+func (l *Lexer) Back() <span class="cov8" title="1">{
+        if l.lastWidth == 0 </span><span class="cov0" title="0">{
+                return
+        }</span>
+        <span class="cov8" title="1">l.current -= l.lastWidth
+        r, _ := utf8.DecodeRuneInString(l.source[l.current:])
+        if r == '\n' </span><span class="cov0" title="0">{
+                l.currentLine -= 1
+        }</span>
+        <span class="cov8" title="1">l.lastWidth = 0</span>
+}
+
+func (l *Lexer) Peek() rune <span class="cov8" title="1">{
+        if l.IsAtEnd() </span><span class="cov8" title="1">{
+                return utf8.RuneError
+        }</span>
+        <span class="cov8" title="1">r, _ := utf8.DecodeRuneInString(l.source[l.current:])
+        return r</span>
+}
+
+func (l *Lexer) Emit(typ TokenType, literal any) <span class="cov8" title="1">{
+        var sb strings.Builder
+        sb.WriteString(l.source[l.lexemeStart:l.current])
+        res := sb.String()
+        t := Token{
+                Type:   typ,
+                Line:   l.lexemeStartLine,
+                Lexeme: res,
+                Value:  literal,
+        }
+        l.tokens = append(l.tokens, t)
+        l.Discard()
+}</span>
+
+func (l *Lexer) Discard() <span class="cov8" title="1">{
+        l.lexemeStart = l.current
+        l.lexemeStartLine = l.currentLine
+        l.lastWidth = 0
+}</span>
+
+func (l *Lexer) IsAtEnd() bool <span class="cov8" title="1">{
+        return len(l.source) &lt;= l.current
+}</span>
+
+func (l *Lexer) HasMoreTokens() bool <span class="cov8" title="1">{
+        return len(l.source) &gt; l.lexemeStart
+}</span>
+
+func (l *Lexer) Lexeme() string <span class="cov8" title="1">{
+        return l.source[l.lexemeStart:l.current]
+}</span>
+</pre>
+		
+		<pre class="file" id="file1" style="display: none">package lexer
+
+import (
+        "fmt"
+        "strconv"
+        "unicode"
+)
+
+type ScanError struct {
+        Line    int
+        Message string
+}
+
+func (s *ScanError) Error() string <span class="cov0" title="0">{
+        return fmt.Sprintf("scan error: line %d: %s", s.Line, s.Message)
+}</span>
+
+func NewScanError(line int, msg string) *ScanError <span class="cov8" title="1">{
+        return &amp;ScanError{
+                Line:    line,
+                Message: msg,
+        }
+}</span>
+
+func ScanSource(source string) ([]Token, error) <span class="cov8" title="1">{
+        l := NewLexer(source)
+        emitTernary := func(r rune, ifTrue TokenType, ifFalse TokenType) </span><span class="cov8" title="1">{
+                if l.Next() == r </span><span class="cov8" title="1">{
+                        l.Emit(ifTrue, nil)
+                }</span> else<span class="cov8" title="1"> {
+                        l.Back()
+                        l.Emit(ifFalse, nil)
+                }</span>
+        }
+
+        <span class="cov8" title="1">for l.HasMoreTokens() </span><span class="cov8" title="1">{
+                r := l.Next()
+
+                // -- non-significant whitespace --
+                if r == ' ' || r == '\t' || r == '\n' </span><span class="cov8" title="1">{
+                        DiscardWhitespace(l)
+                        continue</span>
+                }
+
+                // -- Single Characters --
+                <span class="cov8" title="1">if typ := matchSingleChar(r); typ != NOT_INITIALIZED </span><span class="cov8" title="1">{
+                        l.Emit(typ, nil)
+                        continue</span>
+                }
+
+                // -- One or two character tokens --
+                <span class="cov8" title="1">switch r </span>{
+                case '!':<span class="cov8" title="1">
+                        emitTernary('=', BANG_EQUAL, BANG)
+                        continue</span>
+                case '=':<span class="cov8" title="1">
+                        emitTernary('=', DOUBLE_EQUAL, EQUAL)
+                        continue</span>
+                case '&lt;':<span class="cov8" title="1">
+                        emitTernary('=', LTE, LT)
+                        continue</span>
+                case '&gt;':<span class="cov8" title="1">
+                        emitTernary('=', GTE, GT)
+                        continue</span>
+                }
+
+                // String literal
+                <span class="cov8" title="1">if r == '"' </span><span class="cov8" title="1">{
+                        l.Discard()
+                        if err := StringLiteral(l); err != nil </span><span class="cov0" title="0">{
+                                return nil, err
+                        }</span>
+                        <span class="cov8" title="1">continue</span>
+                }
+
+                // Numeric literal
+                <span class="cov8" title="1">if unicode.IsDigit(r) </span><span class="cov0" title="0">{
+                        for (unicode.IsDigit(l.Peek()) || l.Peek() == '.') &amp;&amp; !l.IsAtEnd() </span><span class="cov0" title="0">{
+                                l.Next()
+                        }</span>
+                        <span class="cov0" title="0">if unicode.IsLetter(l.Peek()) </span><span class="cov0" title="0">{
+                                return nil, NewScanError(l.currentLine, "numbers must be separated from letters by whitespace")
+                        }</span>
+                        <span class="cov0" title="0">v, _ := strconv.ParseFloat(l.Lexeme(), 64)
+                        l.Emit(NUMBER, v)
+                        continue</span>
+                }
+
+                // Idents
+                <span class="cov8" title="1">if unicode.IsLetter(r) || r == '_' </span><span class="cov8" title="1">{
+                        r2 := l.Peek()
+                        for unicode.IsDigit(r2) || unicode.IsLetter(r2) || r2 == '_' &amp;&amp; !l.IsAtEnd() </span><span class="cov8" title="1">{
+                                l.Next()
+                                r2 = l.Peek()
+                        }</span>
+                        <span class="cov8" title="1">if typ := matchKeyword(l.Lexeme()); typ != NOT_INITIALIZED </span><span class="cov8" title="1">{
+                                l.Emit(typ, nil)
+                        }</span> else<span class="cov8" title="1"> {
+                                l.Emit(IDENT, nil)
+                        }</span>
+                        <span class="cov8" title="1">continue</span>
+                }
+
+                // Comment (or divide symbol)
+                <span class="cov8" title="1">if r == '/' </span><span class="cov8" title="1">{
+                        // One-line comment
+                        if l.Peek() == '/' </span><span class="cov8" title="1">{
+                                for l.Peek() != '\n' &amp;&amp; !l.IsAtEnd() </span><span class="cov8" title="1">{
+                                        l.Next()
+                                }</span>
+                                <span class="cov8" title="1">l.Discard()</span>
+                        } else<span class="cov8" title="1"> if l.Peek() == '*' </span><span class="cov8" title="1">{
+                                l.Next()
+                                if err := BlockComment(l); err != nil </span><span class="cov8" title="1">{
+                                        return nil, err
+                                }</span>
+                        } else<span class="cov8" title="1"> {
+                                l.Emit(SLASH, nil)
+                        }</span>
+                        <span class="cov8" title="1">continue</span>
+                }
+
+                <span class="cov0" title="0">return nil, NewScanError(l.currentLine, fmt.Sprintf("unexpected character: %c", r))</span>
+        }
+        <span class="cov8" title="1">l.Emit(EOF, nil)
+        return l.tokens, nil</span>
+}
+
+func DiscardWhitespace(l *Lexer) <span class="cov8" title="1">{
+        isspace := func(r rune) bool </span><span class="cov8" title="1">{
+                return r == ' ' || r == '\n' || r == '\t'
+        }</span>
+        <span class="cov8" title="1">for isspace(l.Peek()) </span><span class="cov8" title="1">{
+                l.Next()
+        }</span>
+        <span class="cov8" title="1">l.Discard()</span>
+}
+
+func StringLiteral(l *Lexer) error <span class="cov8" title="1">{
+        for l.Peek() != '"' &amp;&amp; !l.IsAtEnd() </span><span class="cov8" title="1">{
+                l.Next()
+        }</span>
+        <span class="cov8" title="1">if l.IsAtEnd() </span><span class="cov0" title="0">{
+                return NewScanError(l.currentLine, "unterminated string")
+        }</span>
+        <span class="cov8" title="1">l.Emit(STRING, l.Lexeme())
+
+        // Dump the ending double-quote
+        l.Next()
+        l.Discard()
+        return nil</span>
+}
+
+func BlockComment(l *Lexer) error <span class="cov8" title="1">{
+        nestLevel := 1
+        for nestLevel &gt; 0 &amp;&amp; !l.IsAtEnd() </span><span class="cov8" title="1">{
+                c := l.Next()
+                // End a block
+                if c == '*' &amp;&amp; l.Peek() == '/' </span><span class="cov8" title="1">{
+                        nestLevel--
+                        l.Next()
+                }</span> else<span class="cov8" title="1"> if c == '/' &amp;&amp; l.Peek() == '*' </span><span class="cov8" title="1">{
+                        nestLevel++
+                        l.Next()
+                }</span>
+        }
+        <span class="cov8" title="1">if nestLevel &gt; 0 </span><span class="cov8" title="1">{
+                return NewScanError(l.currentLine, "unterminated block comment")
+        }</span>
+        <span class="cov8" title="1">l.Discard()
+        return nil</span>
+}
+</pre>
+		
+		<pre class="file" id="file2" style="display: none">package lexer
+
+import (
+        "fmt"
+        "glox/errors"
+)
+
+// Enum for all possible token types in the Lox grammar
+type TokenType uint64
+
+const (
+        // One character tokens
+        NOT_INITIALIZED TokenType = iota
+
+        LEFT_PAREN  // (
+        RIGHT_PAREN // )
+        LEFT_BRACE  // {
+        RIGHT_BRACE // }
+        COMMA       // ,
+        DOT         // .
+        MINUS       // -
+        PLUS        // +
+        SEMICOLON   // ;
+        SLASH       // /
+        STAR        // *
+
+        // One or two character tokens
+        BANG         // !
+        BANG_EQUAL   // !=
+        EQUAL        // =
+        DOUBLE_EQUAL // ==
+        GT           // &gt;
+        GTE          // &gt;=
+        LT           // &lt;
+        LTE          // &lt;=
+
+        // Literals
+        IDENT  // generic identities
+        STRING // "hello, world"
+        NUMBER // 1, 2, 3.333
+
+        // Keywords
+        AND
+        CLASS
+        ELSE
+        FALSE
+        FUN
+        FOR
+        IF
+        NIL
+        OR
+        PRINT
+        RETURN
+        SUPER
+        THIS
+        TRUE
+        VAR
+        WHILE
+        BREAK
+        CONTINUE
+
+        EOF
+)
+
+func matchSingleChar(r rune) TokenType <span class="cov8" title="1">{
+        switch r </span>{
+        // -- Single Character --
+        case '(':<span class="cov0" title="0">
+                return LEFT_PAREN</span>
+        case ')':<span class="cov0" title="0">
+                return RIGHT_PAREN</span>
+        case '{':<span class="cov0" title="0">
+                return LEFT_BRACE</span>
+        case '}':<span class="cov0" title="0">
+                return RIGHT_BRACE</span>
+        case '+':<span class="cov8" title="1">
+                return PLUS</span>
+        case '-':<span class="cov8" title="1">
+                return MINUS</span>
+        case '*':<span class="cov8" title="1">
+                return STAR</span>
+        case ',':<span class="cov0" title="0">
+                return COMMA</span>
+        case ';':<span class="cov8" title="1">
+                return SEMICOLON</span>
+        case '.':<span class="cov0" title="0">
+                return DOT</span>
+        default:<span class="cov8" title="1">
+                return NOT_INITIALIZED</span>
+        }
+}
+
+func matchKeyword(s string) TokenType <span class="cov8" title="1">{
+        switch s </span>{
+        case "and":<span class="cov8" title="1">
+                return AND</span>
+        case "class":<span class="cov0" title="0">
+                return CLASS</span>
+        case "else":<span class="cov0" title="0">
+                return ELSE</span>
+        case "false":<span class="cov0" title="0">
+                return FALSE</span>
+        case "fun":<span class="cov0" title="0">
+                return FUN</span>
+        case "for":<span class="cov0" title="0">
+                return FOR</span>
+        case "if":<span class="cov0" title="0">
+                return IF</span>
+        case "nil":<span class="cov0" title="0">
+                return NIL</span>
+        case "or":<span class="cov8" title="1">
+                return OR</span>
+        case "print":<span class="cov8" title="1">
+                return PRINT</span>
+        case "return":<span class="cov0" title="0">
+                return RETURN</span>
+        case "super":<span class="cov0" title="0">
+                return SUPER</span>
+        case "this":<span class="cov0" title="0">
+                return THIS</span>
+        case "true":<span class="cov0" title="0">
+                return TRUE</span>
+        case "var":<span class="cov0" title="0">
+                return VAR</span>
+        case "while":<span class="cov0" title="0">
+                return WHILE</span>
+        case "break":<span class="cov0" title="0">
+                return BREAK</span>
+        case "continue":<span class="cov0" title="0">
+                return CONTINUE</span>
+        }
+        <span class="cov8" title="1">return NOT_INITIALIZED</span>
+}
+
+type Token struct {
+        Type   TokenType
+        Lexeme string
+        Line   int
+        Value  any
+}
+
+func (t Token) String() string <span class="cov0" title="0">{
+        return fmt.Sprintf("%s %s", t.Type, t.Lexeme)
+}</span>
+
+func (t Token) MakeError(msg string) error <span class="cov0" title="0">{
+        return errors.NewLoxError(t.Line, t.Lexeme, msg)
+}</span>
+</pre>
+		
+		<pre class="file" id="file3" style="display: none">// Code generated by "stringer -type TokenType ./lexer/"; DO NOT EDIT.
+
+package lexer
+
+import "strconv"
+
+func _() {
+        // An "invalid array index" compiler error signifies that the constant values have changed.
+        // Re-run the stringer command to generate them again.
+        var x [1]struct{}
+        _ = x[NOT_INITIALIZED-0]
+        _ = x[LEFT_PAREN-1]
+        _ = x[RIGHT_PAREN-2]
+        _ = x[LEFT_BRACE-3]
+        _ = x[RIGHT_BRACE-4]
+        _ = x[COMMA-5]
+        _ = x[DOT-6]
+        _ = x[MINUS-7]
+        _ = x[PLUS-8]
+        _ = x[SEMICOLON-9]
+        _ = x[SLASH-10]
+        _ = x[STAR-11]
+        _ = x[BANG-12]
+        _ = x[BANG_EQUAL-13]
+        _ = x[EQUAL-14]
+        _ = x[DOUBLE_EQUAL-15]
+        _ = x[GT-16]
+        _ = x[GTE-17]
+        _ = x[LT-18]
+        _ = x[LTE-19]
+        _ = x[IDENT-20]
+        _ = x[STRING-21]
+        _ = x[NUMBER-22]
+        _ = x[AND-23]
+        _ = x[CLASS-24]
+        _ = x[ELSE-25]
+        _ = x[FALSE-26]
+        _ = x[FUN-27]
+        _ = x[FOR-28]
+        _ = x[IF-29]
+        _ = x[NIL-30]
+        _ = x[OR-31]
+        _ = x[PRINT-32]
+        _ = x[RETURN-33]
+        _ = x[SUPER-34]
+        _ = x[THIS-35]
+        _ = x[TRUE-36]
+        _ = x[VAR-37]
+        _ = x[WHILE-38]
+        _ = x[BREAK-39]
+        _ = x[CONTINUE-40]
+        _ = x[EOF-41]
+}
+
+const _TokenType_name = "NOT_INITIALIZEDLEFT_PARENRIGHT_PARENLEFT_BRACERIGHT_BRACECOMMADOTMINUSPLUSSEMICOLONSLASHSTARBANGBANG_EQUALEQUALDOUBLE_EQUALGTGTELTLTEIDENTSTRINGNUMBERANDCLASSELSEFALSEFUNFORIFNILORPRINTRETURNSUPERTHISTRUEVARWHILEBREAKCONTINUEEOF"
+
+var _TokenType_index = [...]uint8{0, 15, 25, 36, 46, 57, 62, 65, 70, 74, 83, 88, 92, 96, 106, 111, 123, 125, 128, 130, 133, 138, 144, 150, 153, 158, 162, 167, 170, 173, 175, 178, 180, 185, 191, 196, 200, 204, 207, 212, 217, 225, 228}
+
+func (i TokenType) String() string <span class="cov0" title="0">{
+        if i &gt;= TokenType(len(_TokenType_index)-1) </span><span class="cov0" title="0">{
+                return "TokenType(" + strconv.FormatInt(int64(i), 10) + ")"
+        }</span>
+        <span class="cov0" title="0">return _TokenType_name[_TokenType_index[i]:_TokenType_index[i+1]]</span>
+}
+</pre>
+		
+		<pre class="file" id="file4" style="display: none">package runtime
+
+import (
+        "fmt"
+        "time"
+)
+
+type Callable interface {
+        Arity() int
+        Call(*TreeEvaluator, []any) (any, error)
+}
+
+func LoxTime(l *TreeEvaluator, args []any) (any, error) <span class="cov0" title="0">{
+        return float64(time.Now().UnixMilli()) / 1000., nil
+}</span>
+
+func LoxStringify(l *TreeEvaluator, args []any) (any, error) <span class="cov0" title="0">{
+        return fmt.Sprintf("%v", args[0]), nil
+}</span>
+
+func DefineNativeFunctions(e *Environment) <span class="cov0" title="0">{
+        e.Declare("to_string", NewGoCallable(LoxStringify, 1))
+        e.Declare("time", NewGoCallable(LoxTime, 0))
+}</span>
+</pre>
+		
+		<pre class="file" id="file5" style="display: none">package runtime
+
+import "errors"
+
+type Environment struct {
+        parent *Environment
+        data   map[string]any
+}
+
+func NewEnvironment(parent *Environment) *Environment <span class="cov8" title="1">{
+        return &amp;Environment{
+                parent: parent,
+                data:   make(map[string]any),
+        }
+}</span>
+
+func (e *Environment) Declare(name string, value any) <span class="cov8" title="1">{
+        e.data[name] = value
+}</span>
+
+func (e *Environment) Assign(name string, value any) bool <span class="cov8" title="1">{
+        if _, ok := e.data[name]; ok </span><span class="cov8" title="1">{
+                e.data[name] = value
+                return true
+        }</span>
+        <span class="cov8" title="1">if e.parent != nil </span><span class="cov0" title="0">{
+                return e.parent.Assign(name, value)
+        }</span>
+        <span class="cov8" title="1">return false</span>
+}
+
+func (e *Environment) Get(name string) (val any, ok bool) <span class="cov8" title="1">{
+        val, ok = e.data[name]
+        if !ok &amp;&amp; e.parent != nil </span><span class="cov8" title="1">{
+                val, ok = e.parent.Get(name)
+        }</span>
+
+        <span class="cov8" title="1">return</span>
+}
+
+func (e *Environment) EnterScope() *Environment <span class="cov0" title="0">{
+        return NewEnvironment(e)
+}</span>
+
+func (e Environment) ExitScope() *Environment <span class="cov0" title="0">{
+        if e.parent != nil </span><span class="cov0" title="0">{
+                return e.parent
+        }</span>
+        <span class="cov0" title="0">panic(errors.New("can't exit the global environment"))</span>
+}
+</pre>
+		
+		<pre class="file" id="file6" style="display: none">package runtime
+
+// BreakError tells a TreeEvaluator to escape out of the
+// innermost loop of an execution.
+type BreakError struct {
+        Continue bool
+}
+
+func (e BreakError) Error() string <span class="cov0" title="0">{
+        if e.Continue </span><span class="cov0" title="0">{
+                return "continue statement outside of loop"
+        }</span> else<span class="cov0" title="0"> {
+                return "break statement outside of loop"
+        }</span>
+}
+
+// ReturnError tells a TreeEvaluator to escape out
+// of a function call.
+type ReturnError struct {
+        Value any
+}
+
+func (rv *ReturnError) Error() string <span class="cov0" title="0">{
+        return "return outside function declaration"
+}</span>
+</pre>
+		
+		<pre class="file" id="file7" style="display: none">package runtime
+
+import (
+        "fmt"
+        "glox/ast"
+        "glox/lexer"
+)
+
+type TreeEvaluator struct {
+        BaseEnv *Environment
+        env     *Environment
+        result  any
+}
+
+func NewTreeEvaluator(env *Environment) *TreeEvaluator <span class="cov8" title="1">{
+        return &amp;TreeEvaluator{
+                BaseEnv: env,
+                env:     env,
+        }
+}</span>
+
+func (te *TreeEvaluator) Evaluate(expr ast.Stmt) (any, error) <span class="cov0" title="0">{
+        err := expr.Accept(te)
+        if err != nil </span><span class="cov0" title="0">{
+                return nil, err
+        }</span>
+        <span class="cov0" title="0">return te.result, nil</span>
+}
+
+func (te *TreeEvaluator) ExecuteStatementsWithEnv(stmts []ast.Stmt, env *Environment) (any, error) <span class="cov0" title="0">{
+        prev := te.env
+        te.env = env
+        defer func() </span><span class="cov0" title="0">{ te.env = prev }</span>()
+        <span class="cov0" title="0">var last any
+        for _, s := range stmts </span><span class="cov0" title="0">{
+                if v, err := te.Evaluate(s); err != nil </span><span class="cov0" title="0">{
+                        return nil, err
+                }</span> else<span class="cov0" title="0"> {
+                        last = v
+                }</span>
+        }
+        <span class="cov0" title="0">return last, nil</span>
+}
+
+func (te *TreeEvaluator) VisitAssignment(exp *ast.Assignment) error <span class="cov0" title="0">{
+        if err := exp.Value.Accept(te); err != nil </span><span class="cov0" title="0">{
+                return err
+        }</span>
+        <span class="cov0" title="0">if !te.env.Assign(exp.Name.Lexeme, te.result) </span><span class="cov0" title="0">{
+                return exp.Name.MakeError("undefined variable")
+        }</span>
+        <span class="cov0" title="0">return nil</span>
+}
+
+func (te *TreeEvaluator) VisitLogical(exp *ast.Logical) error <span class="cov0" title="0">{
+        if err := exp.Left.Accept(te); err != nil </span><span class="cov0" title="0">{
+                return err
+        }</span>
+        <span class="cov0" title="0">leftTruthy := truthy(te.result)
+        switch exp.Operator.Type </span>{
+        case lexer.OR:<span class="cov0" title="0">
+                if leftTruthy </span><span class="cov0" title="0">{
+                        te.result = true
+                        return nil
+                }</span>
+        case lexer.AND:<span class="cov0" title="0">
+                if !leftTruthy </span><span class="cov0" title="0">{
+                        te.result = false
+                        return nil
+                }</span>
+        }
+
+        <span class="cov0" title="0">return exp.Right.Accept(te)</span>
+}
+
+func (te *TreeEvaluator) VisitBinary(exp *ast.Binary) error <span class="cov8" title="1">{
+        if err := exp.Left.Accept(te); err != nil </span><span class="cov0" title="0">{
+                return err
+        }</span>
+        <span class="cov8" title="1">left := te.result
+        if err := exp.Right.Accept(te); err != nil </span><span class="cov0" title="0">{
+                return err
+        }</span>
+        <span class="cov8" title="1">right := te.result
+
+        switch exp.Operator.Type </span>{
+        case lexer.DOUBLE_EQUAL:<span class="cov0" title="0">
+                te.result = equality(left, right)
+                return nil</span>
+        case lexer.BANG_EQUAL:<span class="cov0" title="0">
+                te.result = !equality(left, right)
+                return nil</span>
+        case lexer.LT:<span class="cov8" title="1">
+                if !checkNumeric(left, right) </span><span class="cov8" title="1">{
+                        return exp.Operator.MakeError("operator '&lt;' requires numbers")
+                }</span>
+                <span class="cov8" title="1">te.result = left.(float64) &lt; right.(float64)
+                return nil</span>
+        case lexer.LTE:<span class="cov8" title="1">
+                if !checkNumeric(left, right) </span><span class="cov8" title="1">{
+                        return exp.Operator.MakeError("operator '&lt;=' requires numbers")
+                }</span>
+                <span class="cov8" title="1">te.result = left.(float64) &lt;= right.(float64)
+                return nil</span>
+        case lexer.GTE:<span class="cov8" title="1">
+                if !checkNumeric(left, right) </span><span class="cov8" title="1">{
+                        return exp.Operator.MakeError("operator '&gt;=' requires numbers")
+                }</span>
+                <span class="cov8" title="1">te.result = left.(float64) &gt;= right.(float64)
+                return nil</span>
+        case lexer.GT:<span class="cov8" title="1">
+                if !checkNumeric(left, right) </span><span class="cov8" title="1">{
+                        return exp.Operator.MakeError("operator '&gt;' requires numbers")
+                }</span>
+                <span class="cov8" title="1">te.result = left.(float64) &gt; right.(float64)
+                return nil</span>
+        case lexer.MINUS:<span class="cov8" title="1">
+                if !checkNumeric(left, right) </span><span class="cov8" title="1">{
+                        return exp.Operator.MakeError("operator '-' requires numbers")
+                }</span>
+                <span class="cov8" title="1">te.result = left.(float64) - right.(float64)
+                return nil</span>
+        case lexer.STAR:<span class="cov8" title="1">
+                if !checkNumeric(left, right) </span><span class="cov8" title="1">{
+                        return exp.Operator.MakeError("operator '*' requires numbers")
+                }</span>
+                <span class="cov8" title="1">te.result = left.(float64) * right.(float64)
+                return nil</span>
+        case lexer.SLASH:<span class="cov8" title="1">
+                if !checkNumeric(left, right) </span><span class="cov8" title="1">{
+                        return exp.Operator.MakeError("operator '/' requires numbers")
+                }</span>
+                <span class="cov8" title="1">r := right.(float64)
+                if r == 0. </span><span class="cov8" title="1">{
+                        return exp.Operator.MakeError("divide by 0")
+                }</span>
+                <span class="cov8" title="1">te.result = left.(float64) / right.(float64)
+                return nil</span>
+        case lexer.PLUS:<span class="cov8" title="1">
+                if l, ok := left.(float64); ok </span><span class="cov8" title="1">{
+                        if r, ok := right.(float64); ok </span><span class="cov8" title="1">{
+                                te.result = l + r
+                                return nil
+                        }</span>
+                        <span class="cov8" title="1">return exp.Operator.MakeError(fmt.Sprintf("type %T doesn't support addition", right))</span>
+
+                }
+                <span class="cov8" title="1">if l, ok := left.(string); ok </span><span class="cov8" title="1">{
+                        if r, ok := right.(string); ok </span><span class="cov8" title="1">{
+                                te.result = l + r
+                                return nil
+                        }</span>
+                        <span class="cov8" title="1">return exp.Operator.MakeError(fmt.Sprintf("type %T doesn't support addition", right))</span>
+                }
+                <span class="cov8" title="1">return exp.Operator.MakeError(fmt.Sprintf("type %T doesn't support addition", left))</span>
+        }
+        <span class="cov0" title="0">return nil</span>
+}
+func (te *TreeEvaluator) VisitUnary(exp *ast.Unary) error <span class="cov8" title="1">{
+        err := exp.Right.Accept(te)
+        if err != nil </span><span class="cov0" title="0">{
+                return err
+        }</span>
+        <span class="cov8" title="1">switch exp.Operator.Type </span>{
+        case lexer.BANG:<span class="cov8" title="1">
+                te.result = !truthy(te.result)</span>
+        case lexer.MINUS:<span class="cov8" title="1">
+                if v, ok := te.result.(float64); ok </span><span class="cov8" title="1">{
+                        te.result = -v
+                }</span> else<span class="cov0" title="0"> {
+                        return exp.Operator.MakeError(fmt.Sprintf("can't negate a non-float type: %T", te.result))
+                }</span>
+        }
+        <span class="cov8" title="1">return nil</span>
+}
+
+func (te *TreeEvaluator) VisitGrouping(exp *ast.Grouping) error <span class="cov0" title="0">{
+        return exp.Expression.Accept(te)
+}</span>
+func (te *TreeEvaluator) VisitLiteral(exp *ast.Literal) error <span class="cov8" title="1">{
+        te.result = exp.Value
+        return nil
+}</span>
+func (te *TreeEvaluator) VisitVariable(exp *ast.Variable) error <span class="cov8" title="1">{
+        val, ok := te.env.Get(exp.Name.Lexeme)
+        if !ok </span><span class="cov8" title="1">{
+                return exp.Name.MakeError("variable undefined")
+        }</span>
+        <span class="cov8" title="1">te.result = val
+        return nil</span>
+}
+
+func (te *TreeEvaluator) VisitExpression(stmt *ast.Expression) error <span class="cov0" title="0">{
+        return stmt.Expression.Accept(te)
+}</span>
+
+func (te *TreeEvaluator) VisitPrint(stmt *ast.Print) error <span class="cov0" title="0">{
+        err := stmt.Expression.Accept(te)
+        if err != nil </span><span class="cov0" title="0">{
+                return err
+        }</span>
+        <span class="cov0" title="0">fmt.Printf("%v\n", te.result)
+        return nil</span>
+}
+
+func (te *TreeEvaluator) VisitVar(stmt *ast.Var) error <span class="cov0" title="0">{
+        var value any
+        if stmt.Initializer != nil </span><span class="cov0" title="0">{
+                err := stmt.Initializer.Accept(te)
+                if err != nil </span><span class="cov0" title="0">{
+                        return err
+                }</span>
+                <span class="cov0" title="0">value = te.result</span>
+        }
+        <span class="cov0" title="0">te.env.Declare(stmt.Name.Lexeme, value)
+        return nil</span>
+}
+
+func (te *TreeEvaluator) VisitBlock(stmt *ast.Block) error <span class="cov0" title="0">{
+        te.env = te.env.EnterScope()
+        defer func() </span><span class="cov0" title="0">{ te.env = te.env.ExitScope() }</span>()
+        <span class="cov0" title="0">for _, s := range stmt.Statements </span><span class="cov0" title="0">{
+                if err := s.Accept(te); err != nil </span><span class="cov0" title="0">{
+                        return err
+                }</span>
+        }
+        <span class="cov0" title="0">return nil</span>
+}
+
+func (te *TreeEvaluator) VisitIf(stmt *ast.If) error <span class="cov0" title="0">{
+        if err := stmt.Condition.Accept(te); err != nil </span><span class="cov0" title="0">{
+                return err
+        }</span>
+
+        <span class="cov0" title="0">if truthy(te.result) </span><span class="cov0" title="0">{
+                return stmt.ThenBranch.Accept(te)
+        }</span> else<span class="cov0" title="0"> if stmt.ElseBranch != nil </span><span class="cov0" title="0">{
+                return stmt.ElseBranch.Accept(te)
+        }</span>
+        <span class="cov0" title="0">return nil</span>
+}
+
+func (te *TreeEvaluator) VisitWhile(stmt *ast.While) error <span class="cov0" title="0">{
+        if err := stmt.Condition.Accept(te); err != nil </span><span class="cov0" title="0">{
+                return err
+        }</span>
+        <span class="cov0" title="0">for truthy(te.result) </span><span class="cov0" title="0">{
+                if err := stmt.Do.Accept(te); err != nil </span><span class="cov0" title="0">{
+                        switch err.(type) </span>{
+                        case *BreakError:<span class="cov0" title="0">
+                                return nil</span>
+                        }
+                        <span class="cov0" title="0">return err</span>
+                }
+                <span class="cov0" title="0">if err := stmt.Condition.Accept(te); err != nil </span><span class="cov0" title="0">{
+                        return err
+                }</span>
+        }
+        <span class="cov0" title="0">return nil</span>
+}
+
+func (te *TreeEvaluator) VisitBreak(stmt *ast.Break) error <span class="cov0" title="0">{
+        return &amp;BreakError{stmt.Continue}
+}</span>
+
+func (te *TreeEvaluator) VisitCall(expr *ast.Call) error <span class="cov0" title="0">{
+        if err := expr.Callee.Accept(te); err != nil </span><span class="cov0" title="0">{
+                return err
+        }</span>
+        <span class="cov0" title="0">callee := te.result
+        f, ok := callee.(Callable)
+        if !ok </span><span class="cov0" title="0">{
+                return expr.ClosingParen.MakeError("can only call functions and classes")
+        }</span>
+        <span class="cov0" title="0">if len(expr.Args) != f.Arity() </span><span class="cov0" title="0">{
+                return expr.ClosingParen.MakeError(fmt.Sprintf("Expect %d args, found %d", f.Arity(), len(expr.Args)))
+        }</span>
+        <span class="cov0" title="0">args := make([]any, len(expr.Args))
+        for i, a := range expr.Args </span><span class="cov0" title="0">{
+                if err := a.Accept(te); err != nil </span><span class="cov0" title="0">{
+                        return err
+                }</span>
+                <span class="cov0" title="0">args[i] = te.result</span>
+        }
+        <span class="cov0" title="0">var err error
+        te.result, err = f.Call(te, args)
+        return err</span>
+}
+
+func (te *TreeEvaluator) VisitFunction(stmt *ast.Function) error <span class="cov0" title="0">{
+        fn := &amp;LoxFunction{Declaration: stmt}
+        te.env.Declare(stmt.Name.Lexeme, fn)
+        return nil
+}</span>
+
+func (te *TreeEvaluator) VisitReturn(stmt *ast.Return) error <span class="cov0" title="0">{
+        if err := stmt.Expression.Accept(te); err != nil </span><span class="cov0" title="0">{
+                return err
+        }</span>
+        <span class="cov0" title="0">return &amp;ReturnError{Value: te.result}</span>
+}
+</pre>
+		
+		<pre class="file" id="file8" style="display: none">package runtime
+
+type GoCallable struct {
+        F func(*TreeEvaluator, []any) (any, error)
+        A int
+}
+
+func (gc *GoCallable) String() string <span class="cov0" title="0">{
+        return "&lt;built-in fun&gt;"
+}</span>
+
+func (gc *GoCallable) Call(l *TreeEvaluator, args []any) (any, error) <span class="cov0" title="0">{
+        return gc.F(l, args)
+}</span>
+
+func (gc *GoCallable) Arity() int <span class="cov0" title="0">{
+        return gc.A
+}</span>
+
+func NewGoCallable(f func(*TreeEvaluator, []any) (any, error), arity int) Callable <span class="cov0" title="0">{
+        return &amp;GoCallable{F: f, A: arity}
+}</span>
+</pre>
+		
+		<pre class="file" id="file9" style="display: none">package runtime
+
+func truthy(val any) bool <span class="cov8" title="1">{
+        switch t := val.(type) </span>{
+        case bool:<span class="cov8" title="1">
+                return t</span>
+        case int:<span class="cov8" title="1">
+                return t != 0</span>
+        case float64:<span class="cov0" title="0">
+                return t != 0.0</span>
+        case string:<span class="cov8" title="1">
+                return len(t) &gt; 0</span>
+        default:<span class="cov8" title="1">
+                return val != nil</span>
+        }
+}
+
+func equality(l, r any) bool <span class="cov0" title="0">{
+        return l == r
+}</span>
+
+func checkNumeric(vals ...any) bool <span class="cov8" title="1">{
+        for _, v := range vals </span><span class="cov8" title="1">{
+                if _, ok := v.(float64); !ok </span><span class="cov8" title="1">{
+                        return false
+                }</span>
+        }
+        <span class="cov8" title="1">return true</span>
+}
+</pre>
+		
+		<pre class="file" id="file10" style="display: none">package runtime
+
+import (
+        "fmt"
+        "glox/errors"
+        "glox/lexer"
+        "glox/parser"
+)
+
+type Lox struct {
+        HadError bool
+        Globals  *Environment
+}
+
+func NewLoxInterpreter() *Lox <span class="cov0" title="0">{
+        globals := NewEnvironment(nil)
+        DefineNativeFunctions(globals)
+        return &amp;Lox{
+                Globals:  globals,
+                HadError: false,
+        }
+}</span>
+
+func (l *Lox) Report(err error) <span class="cov0" title="0">{
+        fmt.Println(err.Error())
+        l.HadError = true
+}</span>
+
+func (l *Lox) Run(line string) (any, error) <span class="cov0" title="0">{
+        tokens, err := lexer.ScanSource(line)
+        if err != nil </span><span class="cov0" title="0">{
+                switch err.(type) </span>{
+                case *lexer.ScanError:<span class="cov0" title="0">
+                        se := err.(*lexer.ScanError)
+                        l.Report(se)
+                        return nil, &amp;errors.LoxError{LineNumber: se.Line, Message: se.Message}</span>
+                default:<span class="cov0" title="0">
+                        return nil, err</span>
+                }
+        }
+
+        <span class="cov0" title="0">stmts, err := parser.Parse(tokens)
+        if err != nil </span><span class="cov0" title="0">{
+                l.Report(err)
+                return nil, err
+        }</span>
+        <span class="cov0" title="0">te := NewTreeEvaluator(l.Globals)
+        last, err := te.ExecuteStatementsWithEnv(stmts, te.BaseEnv)
+        if err != nil </span><span class="cov0" title="0">{
+                l.Report(err)
+                return nil, err
+        }</span>
+        <span class="cov0" title="0">return last, nil</span>
+}
+</pre>
+		
+		<pre class="file" id="file11" style="display: none">package runtime
+
+import (
+        "fmt"
+        "glox/ast"
+)
+
+// Functions defined in lox code with "fun" syntax.
+type LoxFunction struct {
+        Declaration *ast.Function
+}
+
+func (lf *LoxFunction) Call(te *TreeEvaluator, args []any) (any, error) <span class="cov0" title="0">{
+        v := te.BaseEnv.EnterScope()
+        for i := 0; i &lt; lf.Arity(); i++ </span><span class="cov0" title="0">{
+                v.Declare(lf.Declaration.Params[i].Lexeme, args[i])
+        }</span>
+        <span class="cov0" title="0">if val, err := te.ExecuteStatementsWithEnv(lf.Declaration.Body, v); err != nil </span><span class="cov0" title="0">{
+                if r, ok := err.(*ReturnError); ok </span><span class="cov0" title="0">{
+                        return r.Value, nil
+                }</span>
+                <span class="cov0" title="0">return nil, err</span>
+        } else<span class="cov0" title="0"> {
+                return val, nil
+        }</span>
+}
+
+func (lf *LoxFunction) Arity() int <span class="cov0" title="0">{
+        return len(lf.Declaration.Params)
+}</span>
+
+func (lf *LoxFunction) String() string <span class="cov0" title="0">{
+        return fmt.Sprintf("&lt;fun %s&gt;", lf.Declaration.Name.Lexeme)
+}</span>
+</pre>
+		
+		</div>
+	</body>
+	<script>
+	(function() {
+		var files = document.getElementById('files');
+		var visible;
+		files.addEventListener('change', onChange, false);
+		function select(part) {
+			if (visible)
+				visible.style.display = 'none';
+			visible = document.getElementById(part);
+			if (!visible)
+				return;
+			files.value = part;
+			visible.style.display = 'block';
+			location.hash = part;
+		}
+		function onChange() {
+			select(files.value);
+			window.scrollTo(0, 0);
+		}
+		if (location.hash != "") {
+			select(location.hash.substr(1));
+		}
+		if (!visible) {
+			select("file0");
+		}
+	})();
+	</script>
+</html>

@@ -4,6 +4,8 @@ func truthy(val any) bool {
 	switch t := val.(type) {
 	case bool:
 		return t
+	case int:
+		return t != 0
 	case float64:
 		return t != 0.0
 	case string:

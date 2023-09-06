@@ -13,8 +13,16 @@ ast/%_gen.go: ast.json tool/glast/main.go
 	goimports -w $@
 	gofmt -w $@
 
+unit.cover: $(GOFILES)
+	$(MAKE) test
+
+coverage.html: unit.cover
+	go tool cover -html unit.cover -o $(@)
 
 # -------------------- PHONY Targets
+
+.PHONY: cover
+cover: coverage.html
 
 .PHONY: stubs
 stubs:
