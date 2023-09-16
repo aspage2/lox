@@ -1,15 +1,27 @@
 package main
 
 import (
+	"bufio"
 	"fmt"
 	"os"
+	"strconv"
+	"strings"
 )
 
 func main() {
-	data := make([]byte, 1)
-	_, err := os.Stdin.Read(data)
-	if err != nil {
-		fmt.Println(err)
+	rd := bufio.NewReader(os.Stdin)
+
+	for {
+		fmt.Print(" > ")
+		data, err := rd.ReadString('\n')
+		if err != nil {
+			panic(err)
+		}
+		num, err := strconv.ParseInt(strings.TrimSpace(string(data)), 16, 32)
+		if err != nil {
+			panic(err)
+		}
+
+		fmt.Printf("%c\n", rune(num))
 	}
-	fmt.Printf("%v\n", data)
 }
