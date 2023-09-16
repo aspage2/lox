@@ -3,7 +3,9 @@ package lexer
 import (
 	"fmt"
 	"strconv"
+	"strings"
 	"unicode"
+	"unicode/utf8"
 )
 
 type ScanError struct {
@@ -137,18 +139,61 @@ func DiscardWhitespace(l *Lexer) {
 }
 
 func StringLiteral(l *Lexer) error {
+	var sb strings.Builder
 	for l.Peek() != '"' && !l.IsAtEnd() {
-		l.Next()
+		c := l.Next()
+		if c == '\\' {
+			actual := EscapeSequence(l)
+			if actual == utf8.RuneError {
+				return NewScanError(l.currentLine, fmt.Sprintf("invalid escape sequence"))
+			}
+			sb.WriteRune(actual)
+		} else {
+			sb.WriteRune(c)
+		}
 	}
 	if l.IsAtEnd() {
 		return NewScanError(l.currentLine, "unterminated string")
 	}
-	l.Emit(STRING, l.Lexeme())
+	l.Emit(STRING, sb.String())
 
 	// Dump the ending double-quote
 	l.Next()
 	l.Discard()
 	return nil
+}
+
+func IsHex(r rune) bool {
+	switch r {
+	case 'a', 'A', 'b', 'B', 'c', 'C', 'd', 'D', 'e', 'E', 'f', 'F':
+		return true
+	case '0', '1', '2', '3', '4', '5', '6', '7', '8', '9':
+		return true
+	}
+	return false
+}
+
+func EscapeSequence(l *Lexer) rune {
+	switch v := l.Next(); v {
+	case 'n':
+		return '\n'
+	case 'r':
+		return '\r'
+	case 't':
+		return '\t'
+	case '\\':
+		return '\\'
+	case '"':
+		return '"'
+	case 'u':
+		var sb strings.Builder
+		for IsHex(l.Peek()) && !l.IsAtEnd() {
+			sb.WriteRune(l.Next())
+		}
+		num, _ := strconv.ParseInt(sb.String(), 16, 32)
+		return rune(num)
+	}
+	return utf8.RuneError
 }
 
 func BlockComment(l *Lexer) error {
