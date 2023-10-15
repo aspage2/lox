@@ -2,3 +2,9 @@
 **/main
 
 **/*.cover
+
+tree-sitter-lox/Cargo.toml
+tree-sitter-lox/node_modules/
+tree-sitter-lox/binding.gyp
+tree-sitter-lox/bindings/
+tree-sitter-lox/src/
