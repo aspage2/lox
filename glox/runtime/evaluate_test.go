@@ -10,17 +10,19 @@ import (
 )
 
 // -------------------------------------
-//  BINARY ARITHMETIC EXPRESSIONS
+//
+//	BINARY ARITHMETIC EXPRESSIONS
+//
 // -------------------------------------
 func assertBinaryExprEvaluates(t *testing.T, l, r any, op lexer.TokenType, exp any) {
-	te := NewTreeEvaluator(nil)
+	te := NewTreeEvaluator(nil, nil)
 	expr := makeBinaryExp(l, r, op)
 	assert.NoError(t, expr.Accept(te))
 	assert.Equal(t, exp, te.result)
 }
 
 func assertBinaryExprErrs(t *testing.T, l, r any, op lexer.TokenType) {
-	te := NewTreeEvaluator(nil)
+	te := NewTreeEvaluator(nil, nil)
 	expr := makeBinaryExp(l, r, op)
 	assert.Error(t, expr.Accept(te))
 }
@@ -153,7 +155,9 @@ func TestTruthy(t *testing.T) {
 // -------------------------------------
 
 // -------------------------------------
-//  UNARY EXPRESSIONS
+//
+//	UNARY EXPRESSIONS
+//
 // -------------------------------------
 func assertUnaryExprEvaluates(t *testing.T, v any, op lexer.TokenType, exp any) {
 	expr := &ast.Unary{
@@ -162,7 +166,7 @@ func assertUnaryExprEvaluates(t *testing.T, v any, op lexer.TokenType, exp any) 
 			Type: op,
 		},
 	}
-	te := NewTreeEvaluator(nil)
+	te := NewTreeEvaluator(nil, nil)
 	assert.NoError(t, expr.Accept(te))
 	assert.Equal(t, exp, te.result)
 }
@@ -174,7 +178,7 @@ func assertUnaryExprErrs(t *testing.T, v any, op lexer.TokenType) {
 			Type: op,
 		},
 	}
-	te := NewTreeEvaluator(nil)
+	te := NewTreeEvaluator(nil, nil)
 	assert.Error(t, expr.Accept(te))
 
 }
@@ -210,7 +214,7 @@ func TestVariable(t *testing.T) {
 			Lexeme: "x",
 		},
 	}
-	te := NewTreeEvaluator(env)
+	te := NewTreeEvaluator(env, nil)
 	assert.NoError(t, v.Accept(te))
 	assert.Equal(t, 33, te.result)
 }
@@ -223,7 +227,14 @@ func TestVariable_Err(t *testing.T) {
 			Lexeme: "x",
 		},
 	}
-	te := NewTreeEvaluator(env)
+	te := NewTreeEvaluator(env, nil)
 	assert.Error(t, v.Accept(te))
 
+}
+
+func TestLiteral(t *testing.T) {
+	te := NewTreeEvaluator(nil, nil)
+	exp := &ast.Literal{Value: 3}
+	assert.NoError(t, exp.Accept(te))
+	assert.Equal(t, 3, te.result)
 }

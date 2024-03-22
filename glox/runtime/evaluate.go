@@ -9,12 +9,14 @@ import (
 type TreeEvaluator struct {
 	BaseEnv *Environment
 	env     *Environment
+	Locals  map[ast.Expr]int
 	result  any
 }
 
-func NewTreeEvaluator(env *Environment) *TreeEvaluator {
+func NewTreeEvaluator(env *Environment, locals map[ast.Expr]int) *TreeEvaluator {
 	return &TreeEvaluator{
 		BaseEnv: env,
+		Locals:  locals,
 		env:     env,
 	}
 }
@@ -46,9 +48,12 @@ func (te *TreeEvaluator) VisitAssignment(exp *ast.Assignment) error {
 	if err := exp.Value.Accept(te); err != nil {
 		return err
 	}
-	if !te.env.Assign(exp.Name.Lexeme, te.result) {
-		return exp.Name.MakeError("undefined variable")
+	dist, ok := te.Locals[exp]
+	if ok {
+		te.env.AssignAt(dist, exp.Name.Lexeme, te.result)
+		return nil
 	}
+	te.BaseEnv.Assign(exp.Name.Lexeme, te.result)
 	return nil
 }
 
@@ -182,9 +187,20 @@ func (te *TreeEvaluator) VisitLiteral(exp *ast.Literal) error {
 	return nil
 }
 func (te *TreeEvaluator) VisitVariable(exp *ast.Variable) error {
-	val, ok := te.env.Get(exp.Name.Lexeme)
+	dist, ok := te.Locals[exp]
+	// This variable expression isn't declared in
+	// a local scope.
 	if !ok {
-		return exp.Name.MakeError("variable undefined")
+		val, ok := te.BaseEnv.Get(exp.Name.Lexeme)
+		if !ok {
+			return exp.Name.MakeError("undefined variable")
+		}
+		te.result = val
+		return nil
+	}
+	val, ok := te.env.GetAt(dist, exp.Name.Lexeme)
+	if !ok {
+		return exp.Name.MakeError("undefined variable")
 	}
 	te.result = val
 	return nil
