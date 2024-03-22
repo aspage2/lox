@@ -58,9 +58,5 @@ func (e *Environment) EnterScope() *Environment {
 }
 
 func (e Environment) ExitScope() *Environment {
-	if e.parent != nil {
-		return e.parent
-	}
-	return nil
-	//panic(errors.New("can't exit the global environment"))
+	return e.parent
 }

@@ -2,7 +2,6 @@ package runtime
 
 import (
 	"fmt"
-	"glox/ast"
 	"glox/errors"
 	"glox/lexer"
 	"glox/parser"
@@ -11,7 +10,6 @@ import (
 type Lox struct {
 	HadError bool
 	Globals  *Environment
-	Locals   map[ast.Expr]int
 }
 
 func NewLoxInterpreter() *Lox {
@@ -19,13 +17,8 @@ func NewLoxInterpreter() *Lox {
 	DefineNativeFunctions(globals)
 	return &Lox{
 		Globals:  globals,
-		Locals:   make(map[ast.Expr]int),
 		HadError: false,
 	}
-}
-
-func (l *Lox) Resolve(e ast.Expr, pos int) {
-	l.Locals[e] = pos
 }
 
 func (l *Lox) Report(err error) {
@@ -51,14 +44,12 @@ func (l *Lox) Run(line string) (any, error) {
 		l.Report(err)
 		return nil, err
 	}
-	resolver := NewResolver(l)
-	for _, s := range stmts {
-		if err := s.Accept(resolver); err != nil {
-			l.Report(err)
-			return nil, err
-		}
+	locals, err := newresolver().ResolveVariables(stmts)
+	if err != nil {
+		l.Report(err)
+		return nil, err
 	}
-	te := NewTreeEvaluator(l.Globals, l.Locals)
+	te := NewTreeEvaluator(l.Globals, locals)
 	last, err := te.ExecuteStatementsWithEnv(stmts, te.BaseEnv)
 	if err != nil {
 		l.Report(err)
