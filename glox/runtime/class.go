@@ -1,6 +1,8 @@
 package runtime
 
-import ("fmt")
+import (
+	"fmt"
+)
 
 type LoxClass struct {
 	Name string
@@ -19,13 +21,13 @@ func (cls *LoxClass) String() string {
 }
 
 type LoxInstance struct {
-	Cls *LoxClass
+	Cls    *LoxClass
 	fields map[string]any
 }
 
 func NewLoxInstance(cls *LoxClass) *LoxInstance {
 	return &LoxInstance{
-		Cls: cls,
+		Cls:    cls,
 		fields: make(map[string]any),
 	}
 }

@@ -28,6 +28,9 @@ func Parse(tokens []lexer.Token) ([]ast.Stmt, error) {
 	return ret, nil
 }
 
+// Take the next token only if it matches the given type.
+// Otherwise, produce a parer error on that token with the
+// given message.
 func (p *RecursiveDescent) Consume(typ lexer.TokenType, ifNot string) (lexer.Token, error) {
 	if !p.MatchType(typ) {
 		return lexer.Token{}, p.Peek().MakeError(ifNot)
@@ -38,13 +41,15 @@ func (p *RecursiveDescent) Consume(typ lexer.TokenType, ifNot string) (lexer.Tok
 // declaration -> varDecl | functionDecl | classDecl | statement ;
 func (p *RecursiveDescent) Declaration() (ast.Stmt, error) {
 	var f func() (ast.Stmt, error)
-	if p.TakeIfType(lexer.CLASS) {
+	switch p.Next().Type {
+	case lexer.CLASS:
 		f = p.ClassDeclaration
-	} else if p.TakeIfType(lexer.FUN) {
+	case lexer.FUN:
 		f = func() (ast.Stmt, error) { return p.FunctionDeclaration("function") }
-	} else if p.TakeIfType(lexer.VAR) {
+	case lexer.VAR:
 		f = p.VarDeclaration
-	} else {
+	default:
+		p.Back()
 		f = p.Statement
 	}
 	s, err := f()
@@ -56,7 +61,7 @@ func (p *RecursiveDescent) Declaration() (ast.Stmt, error) {
 }
 
 func (p *RecursiveDescent) ClassDeclaration() (ast.Stmt, error) {
-	name, err := p.Consume(lexer.IDENT, "exect class name")
+	name, err := p.Consume(lexer.IDENT, "expect class name")
 	if err != nil {
 		return nil, err
 	}
@@ -73,6 +78,9 @@ func (p *RecursiveDescent) ClassDeclaration() (ast.Stmt, error) {
 		methods = append(methods, m.(*ast.Function))
 	}
 	_, err = p.Consume(lexer.RIGHT_BRACE, "Expect '}' at end of class declaration")
+	if err != nil {
+		return nil, err
+	}
 	return &ast.Class{Name: name, Methods: methods}, nil
 }
 
@@ -139,7 +147,7 @@ func (p *RecursiveDescent) VarDeclaration() (ast.Stmt, error) {
 			return nil, err
 		}
 	}
-	if tok := p.Next(); tok.Type != lexer.SEMICOLON {
+	if tok := p.Next(); tok.Type != lexer.SEMICOLON && tok.Type != lexer.EOF {
 		return nil, tok.MakeError("expect ';' after variable declaration")
 	}
 	return &ast.Var{Name: id, Initializer: initializer}, nil
@@ -373,13 +381,13 @@ func (p *RecursiveDescent) Assignment() (ast.Expr, error) {
 		case *ast.Get:
 			return &ast.Set{
 				Object: v.Object,
-				Name: v.Name,
-				Value: value,
+				Name:   v.Name,
+				Value:  value,
 			}, nil
 		default:
 			return nil, eq.MakeError("Invalid assignment target")
 		}
-	} 
+	}
 	return expr, nil
 }
 
@@ -438,7 +446,7 @@ func (p *RecursiveDescent) Call() (ast.Expr, error) {
 	if err != nil {
 		return nil, err
 	}
-	for {
+	for !p.IsAtEnd() {
 		switch p.Next().Type {
 		case lexer.LEFT_PAREN:
 			args := make([]ast.Expr, 0)
@@ -467,7 +475,7 @@ func (p *RecursiveDescent) Call() (ast.Expr, error) {
 				Args:         args,
 			}
 
-		case lexer.RIGHT_PAREN:
+		case lexer.DOT:
 			name, err := p.Consume(lexer.IDENT, "Expect property name after '.'")
 			if err != nil {
 				return nil, err
@@ -478,6 +486,7 @@ func (p *RecursiveDescent) Call() (ast.Expr, error) {
 			return callee, nil
 		}
 	}
+	return callee, nil
 }
 
 // primary -> "true" | "false" | "nil" | NUMBER | STRING | "(" expression ")" | IDENT ;
