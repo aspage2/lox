@@ -10,8 +10,8 @@ lexer/tokentype_string.go: lexer/tokentype.go
 
 ast/%_gen.go: ast.json tool/glast/main.go
 	go run tool/glast/main.go -p ast -t $(*F) ast.json > $@
-	goimports -w $@
-	gofmt -w $@
+	goimports -w $@ || true
+	gofmt -w $@ || true
 
 unit.cover: $(GOFILES)
 	$(MAKE) test

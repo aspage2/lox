@@ -1,3 +1,4 @@
+lexer/tokentype_string.go
 coverage.html
 build/
 ast/*_gen.go
