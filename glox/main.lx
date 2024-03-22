@@ -1,6 +1,5 @@
 
 var a = 3;
-print "hi";
 {
 	fun f(x) {
 		return x + a;

@@ -44,7 +44,7 @@ func (l *Lox) Run(line string) (any, error) {
 		l.Report(err)
 		return nil, err
 	}
-	locals, err := newresolver().ResolveVariables(stmts)
+	locals, err := ResolveVariables(stmts)
 	if err != nil {
 		l.Report(err)
 		return nil, err
