@@ -481,6 +481,7 @@ func (p *RecursiveDescent) synchronize() {
 	}
 }
 
+// Parse a return statement of the form `return {expression};`
 func (p *RecursiveDescent) ReturnStatement() (ast.Stmt, error) {
 	p.Back()
 	tok := p.Next()

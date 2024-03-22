@@ -1,7 +1,5 @@
 package runtime
 
-import "errors"
-
 type Environment struct {
 	parent *Environment
 	data   map[string]any
@@ -12,6 +10,23 @@ func NewEnvironment(parent *Environment) *Environment {
 		parent: parent,
 		data:   make(map[string]any),
 	}
+}
+
+func (e *Environment) GetAt(i int, name string) (val any, ok bool) {
+	t := e
+	for ; i > 0; i -= 1 {
+		t = t.parent
+	}
+	return t.Get(name)
+}
+
+func (e *Environment) AssignAt(i int, name string, value any) bool {
+	t := e
+	for ; i > 0; i -= 1 {
+		t = t.parent
+	}
+	t.data[name] = value
+	return true
 }
 
 func (e *Environment) Declare(name string, value any) {
@@ -43,8 +58,5 @@ func (e *Environment) EnterScope() *Environment {
 }
 
 func (e Environment) ExitScope() *Environment {
-	if e.parent != nil {
-		return e.parent
-	}
-	panic(errors.New("can't exit the global environment"))
+	return e.parent
 }

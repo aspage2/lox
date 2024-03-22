@@ -44,7 +44,12 @@ func (l *Lox) Run(line string) (any, error) {
 		l.Report(err)
 		return nil, err
 	}
-	te := NewTreeEvaluator(l.Globals)
+	locals, err := ResolveVariables(stmts)
+	if err != nil {
+		l.Report(err)
+		return nil, err
+	}
+	te := NewTreeEvaluator(l.Globals, locals)
 	last, err := te.ExecuteStatementsWithEnv(stmts, te.BaseEnv)
 	if err != nil {
 		l.Report(err)
