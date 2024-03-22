@@ -5,6 +5,8 @@ import (
 	"glox/errors"
 	"glox/lexer"
 	"glox/parser"
+
+	"glox/runtime/variable_resolver"
 )
 
 type Lox struct {
@@ -44,7 +46,7 @@ func (l *Lox) Run(line string) (any, error) {
 		l.Report(err)
 		return nil, err
 	}
-	locals, err := ResolveVariables(stmts)
+	locals, err := variable_resolver.ResolveVariables(stmts)
 	if err != nil {
 		l.Report(err)
 		return nil, err

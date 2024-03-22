@@ -44,6 +44,44 @@ func (te *TreeEvaluator) ExecuteStatementsWithEnv(stmts []ast.Stmt, env *Environ
 	return last, nil
 }
 
+func (te *TreeEvaluator) VisitSet(expr *ast.Set) error {
+	if err := expr.Object.Accept(te); err != nil {
+		return err
+	}
+	obj, ok := te.result.(*LoxInstance)
+	if !ok {
+		return expr.Name.MakeError("can't assign field to non-instance")
+	}
+	if err := expr.Value.Accept(te); err != nil {
+		return err
+	}
+	obj.Set(expr.Name.Lexeme, te.result)
+	return nil
+}
+
+func (te *TreeEvaluator) VisitGet(expr *ast.Get) error {
+	if err := expr.Object.Accept(te); err != nil {
+		return err
+	}
+	if inst, ok := te.result.(*LoxInstance); ok {
+		val, ok := inst.Get(expr.Name.Lexeme)
+		if !ok {
+			return expr.Name.MakeError("undefined field")
+		}
+		te.result = val
+		return nil
+	}
+	return expr.Name.MakeError("only instances can have properties")
+}
+
+func (te *TreeEvaluator) VisitClass(stmt *ast.Class) error {
+	name := stmt.Name.Lexeme
+	te.env.Declare(name, nil)
+	cls := &LoxClass{Name: name}
+	te.env.Assign(name, cls)
+	return nil
+}
+
 func (te *TreeEvaluator) VisitAssignment(exp *ast.Assignment) error {
 	if err := exp.Value.Accept(te); err != nil {
 		return err

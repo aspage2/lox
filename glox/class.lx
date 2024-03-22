@@ -1,0 +1,7 @@
+class What {
+	hello() { return "What???"; }
+}
+
+print What;
+var i = What();
+print i;

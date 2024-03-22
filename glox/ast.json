@@ -14,10 +14,19 @@
 			"ClosingParen lexer.Token",
 			"Args []Expr"
 		],
+		"Get": [
+			"Object Expr",
+			"Name lexer.Token"
+		],
 		"Logical": [
 			"Left Expr",
 			"Operator lexer.Token",
 			"Right Expr"
+		],
+		"Set": [
+			"Object Expr",
+			"Name lexer.Token",
+			"Value Expr"
 		],
 		"Unary": [
 			"Operator lexer.Token",
@@ -30,6 +39,7 @@
 	"Stmt": {
 		"Block": ["Statements []Stmt"],
 		"Break": ["Continue bool"],
+		"Class": ["Name lexer.Token", "Methods []*Function"],
 		"Expression": ["Expression Expr"],
 		"Function": [
 			"Name lexer.Token",
