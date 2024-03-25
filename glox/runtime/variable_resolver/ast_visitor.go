@@ -7,12 +7,27 @@ import (
 type FunctionType int
 
 const (
-	None FunctionType = iota
-	Function
-	Method
+	FUNCTIONTYPE_NONE FunctionType = iota
+	FUNCTIONTYPE_FUNCTION
+	FUNCTIONTYPE_METHOD
+)
+
+type ClassType int
+
+const (
+	CLASSTYPE_NONE = iota
+	CLASSTYPE_CLASS
 )
 
 // ---------------- Visitor Implementation ----------------
+
+func (r *resolver) VisitThis(expr *ast.This) error {
+	if r.currentClass == CLASSTYPE_NONE {
+		return expr.Keyword.MakeError("use of 'this' outside a class definition")
+	}
+	r.ResolveLocal(expr, expr.Keyword)
+	return nil
+}
 
 func (r *resolver) VisitSet(expr *ast.Set) error {
 	if err := expr.Value.Accept(r); err != nil {
@@ -29,8 +44,20 @@ func (r *resolver) VisitGet(expr *ast.Get) error {
 }
 
 func (r *resolver) VisitClass(stmt *ast.Class) error {
+	prevClass := r.currentClass
+	r.currentClass = CLASSTYPE_CLASS
+	defer func() { r.currentClass = prevClass }()
 	r.Declare(stmt.Name.Lexeme)
 	r.Define(stmt.Name.Lexeme)
+
+	r.BeginScope()
+	defer r.EndScope()
+	r.CurrentScope()["this"] = true
+	for _, method := range stmt.Methods {
+		if err := r.ResolveFunction(method, FUNCTIONTYPE_METHOD); err != nil {
+			return err
+		}
+	}
 	return nil
 }
 
@@ -81,7 +108,7 @@ func (r *resolver) VisitAssignment(e *ast.Assignment) error {
 func (r *resolver) VisitFunction(s *ast.Function) error {
 	r.Declare(s.Name.Lexeme)
 	r.Define(s.Name.Lexeme)
-	return r.ResolveFunction(s, Function)
+	return r.ResolveFunction(s, FUNCTIONTYPE_FUNCTION)
 }
 func (r *resolver) ResolveFunction(s *ast.Function, typ FunctionType) error {
 	enclosingFunction := r.currentFunction
@@ -136,7 +163,7 @@ func (r *resolver) VisitPrint(s *ast.Print) error {
 }
 
 func (r *resolver) VisitReturn(s *ast.Return) error {
-	if r.currentFunction == None {
+	if r.currentFunction == FUNCTIONTYPE_NONE {
 		return s.Token.MakeError("return outside a function or method")
 	}
 	if s.Expression != nil {

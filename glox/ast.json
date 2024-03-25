@@ -28,6 +28,9 @@
 			"Name lexer.Token",
 			"Value Expr"
 		],
+		"This": [
+			"Keyword lexer.Token"
+		],
 		"Unary": [
 			"Operator lexer.Token",
 			"Right Expr"

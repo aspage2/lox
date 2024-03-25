@@ -45,13 +45,15 @@ func ResolveVariables(stmts []ast.Stmt) (map[ast.Expr]int, error) {
 
 type resolver struct {
 	currentFunction FunctionType
+	currentClass    ClassType
 	scopes          []map[string]bool
 	localsMap       map[ast.Expr]int
 }
 
 func newresolver() *resolver {
 	return &resolver{
-		currentFunction: None,
+		currentFunction: FUNCTIONTYPE_NONE,
+		currentClass:    CLASSTYPE_NONE,
 		scopes:          make([]map[string]bool, 0),
 		localsMap:       make(map[ast.Expr]int),
 	}

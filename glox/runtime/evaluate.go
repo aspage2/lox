@@ -44,6 +44,23 @@ func (te *TreeEvaluator) ExecuteStatementsWithEnv(stmts []ast.Stmt, env *Environ
 	return last, nil
 }
 
+func (te *TreeEvaluator) VariableLookup(name lexer.Token, expr ast.Expr) (any, bool) {
+	dist, ok := te.Locals[expr]
+	if ok {
+		return te.env.GetAt(dist, name.Lexeme)
+	}
+	return te.BaseEnv.Get(name.Lexeme)
+}
+
+func (te *TreeEvaluator) VisitThis(expr *ast.This) error {
+	val, ok := te.VariableLookup(expr.Keyword, expr)
+	if !ok {
+		return expr.Keyword.MakeError("function isn't bound")
+	}
+	te.result = val
+	return nil
+}
+
 func (te *TreeEvaluator) VisitSet(expr *ast.Set) error {
 	if err := expr.Object.Accept(te); err != nil {
 		return err
@@ -77,8 +94,17 @@ func (te *TreeEvaluator) VisitGet(expr *ast.Get) error {
 func (te *TreeEvaluator) VisitClass(stmt *ast.Class) error {
 	name := stmt.Name.Lexeme
 	te.env.Declare(name, nil)
-	cls := &LoxClass{Name: name}
+	methods := make(map[string]*LoxFunction)
+	for _, method := range stmt.Methods {
+		f := &LoxFunction{
+			Declaration: method,
+			Closure:     te.env,
+		}
+		methods[method.Name.Lexeme] = f
+	}
+	cls := &LoxClass{Name: name, Methods: methods}
 	te.env.Assign(name, cls)
+
 	return nil
 }
 
@@ -225,18 +251,7 @@ func (te *TreeEvaluator) VisitLiteral(exp *ast.Literal) error {
 	return nil
 }
 func (te *TreeEvaluator) VisitVariable(exp *ast.Variable) error {
-	dist, ok := te.Locals[exp]
-	// This variable expression isn't declared in
-	// a local scope.
-	if !ok {
-		val, ok := te.BaseEnv.Get(exp.Name.Lexeme)
-		if !ok {
-			return exp.Name.MakeError("undefined variable")
-		}
-		te.result = val
-		return nil
-	}
-	val, ok := te.env.GetAt(dist, exp.Name.Lexeme)
+	val, ok := te.VariableLookup(exp.Name, exp)
 	if !ok {
 		return exp.Name.MakeError("undefined variable")
 	}

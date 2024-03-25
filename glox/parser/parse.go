@@ -491,21 +491,21 @@ func (p *RecursiveDescent) Call() (ast.Expr, error) {
 
 // primary -> "true" | "false" | "nil" | NUMBER | STRING | "(" expression ")" | IDENT ;
 func (p *RecursiveDescent) Primary() (ast.Expr, error) {
-	if p.TakeIfType(lexer.FALSE) {
+	switch p.Next().Type {
+	case lexer.FALSE:
 		return &ast.Literal{Value: false}, nil
-	}
-	if p.TakeIfType(lexer.TRUE) {
+	case lexer.TRUE:
 		return &ast.Literal{Value: true}, nil
-	}
-	if p.TakeIfType(lexer.NIL) {
+	case lexer.NIL:
 		return &ast.Literal{Value: nil}, nil
-	}
-	if p.TakeIfType(lexer.NUMBER, lexer.STRING) {
+	case lexer.THIS:
+		p.Back()
+		t := p.Next()
+		return &ast.This{Keyword: t}, nil
+	case lexer.NUMBER, lexer.STRING:
 		p.Back()
 		return &ast.Literal{Value: p.Next().Value}, nil
-	}
-
-	if p.TakeIfType(lexer.LEFT_PAREN) {
+	case lexer.LEFT_PAREN:
 		e, err := p.Expression()
 		if err != nil {
 			return nil, err
@@ -514,13 +514,11 @@ func (p *RecursiveDescent) Primary() (ast.Expr, error) {
 			return nil, p.Peek().MakeError("expected ending ')'.")
 		}
 		return &ast.Grouping{Expression: e}, nil
-	}
-
-	if p.TakeIfType(lexer.IDENT) {
+	case lexer.IDENT:
 		p.Back()
 		return &ast.Variable{Name: p.Next()}, nil
 	}
-
+	p.Back()
 	return nil, p.Peek().MakeError("unexpected token.")
 }
 

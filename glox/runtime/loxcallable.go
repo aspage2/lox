@@ -36,6 +36,15 @@ func (lf *LoxFunction) Arity() int {
 	return len(lf.Declaration.Params)
 }
 
+func (lf *LoxFunction) Bind(inst *LoxInstance) *LoxFunction {
+	env := NewEnvironment(lf.Closure)
+	env.Declare("this", inst)
+	return &LoxFunction{
+		Declaration: lf.Declaration,
+		Closure:     env,
+	}
+}
+
 func (lf *LoxFunction) String() string {
 	return fmt.Sprintf("<fun %s>", lf.Declaration.Name.Lexeme)
 }
