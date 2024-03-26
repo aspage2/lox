@@ -28,14 +28,28 @@ func Parse(tokens []lexer.Token) ([]ast.Stmt, error) {
 	return ret, nil
 }
 
-// declaration -> varDecl | statement ;
+// Take the next token only if it matches the given type.
+// Otherwise, produce a parer error on that token with the
+// given message.
+func (p *RecursiveDescent) Consume(typ lexer.TokenType, ifNot string) (lexer.Token, error) {
+	if !p.MatchType(typ) {
+		return lexer.Token{}, p.Peek().MakeError(ifNot)
+	}
+	return p.Next(), nil
+}
+
+// declaration -> varDecl | functionDecl | classDecl | statement ;
 func (p *RecursiveDescent) Declaration() (ast.Stmt, error) {
 	var f func() (ast.Stmt, error)
-	if p.TakeIfType(lexer.FUN) {
+	switch p.Next().Type {
+	case lexer.CLASS:
+		f = p.ClassDeclaration
+	case lexer.FUN:
 		f = func() (ast.Stmt, error) { return p.FunctionDeclaration("function") }
-	} else if p.TakeIfType(lexer.VAR) {
+	case lexer.VAR:
 		f = p.VarDeclaration
-	} else {
+	default:
+		p.Back()
 		f = p.Statement
 	}
 	s, err := f()
@@ -46,13 +60,39 @@ func (p *RecursiveDescent) Declaration() (ast.Stmt, error) {
 	return s, nil
 }
 
-func (p *RecursiveDescent) FunctionDeclaration(kind string) (ast.Stmt, error) {
-	if !p.MatchType(lexer.IDENT) {
-		return nil, p.Peek().MakeError(fmt.Sprintf("Expect %s name", kind))
+func (p *RecursiveDescent) ClassDeclaration() (ast.Stmt, error) {
+	name, err := p.Consume(lexer.IDENT, "expect class name")
+	if err != nil {
+		return nil, err
 	}
-	name := p.Next()
-	if !p.TakeIfType(lexer.LEFT_PAREN) {
-		return nil, p.Peek().MakeError("Expect '(' after function name in declaration")
+	_, err = p.Consume(lexer.LEFT_BRACE, "expect '{' after class name")
+	if err != nil {
+		return nil, err
+	}
+	var methods []*ast.Function
+	for p.Peek().Type != lexer.RIGHT_BRACE && !p.IsAtEnd() {
+		m, err := p.FunctionDeclaration("method")
+		if err != nil {
+			return nil, err
+		}
+		methods = append(methods, m.(*ast.Function))
+	}
+	_, err = p.Consume(lexer.RIGHT_BRACE, "Expect '}' at end of class declaration")
+	if err != nil {
+		return nil, err
+	}
+	return &ast.Class{Name: name, Methods: methods}, nil
+}
+
+// Parse a function declaration. Kind is one of "function" or "method".
+func (p *RecursiveDescent) FunctionDeclaration(kind string) (ast.Stmt, error) {
+	name, err := p.Consume(lexer.IDENT, fmt.Sprintf("Expect %s name.", kind))
+	if err != nil {
+		return nil, err
+	}
+	_, err = p.Consume(lexer.LEFT_PAREN, "Expect '(' after function name in declaration")
+	if err != nil {
+		return nil, err
 	}
 	params := make([]lexer.Token, 0)
 	if !p.MatchType(lexer.RIGHT_PAREN) {
@@ -107,7 +147,7 @@ func (p *RecursiveDescent) VarDeclaration() (ast.Stmt, error) {
 			return nil, err
 		}
 	}
-	if tok := p.Next(); tok.Type != lexer.SEMICOLON {
+	if tok := p.Next(); tok.Type != lexer.SEMICOLON && tok.Type != lexer.EOF {
 		return nil, tok.MakeError("expect ';' after variable declaration")
 	}
 	return &ast.Var{Name: id, Initializer: initializer}, nil
@@ -335,10 +375,18 @@ func (p *RecursiveDescent) Assignment() (ast.Expr, error) {
 		if err != nil {
 			return nil, err
 		}
-		if v, ok := expr.(*ast.Variable); ok {
+		switch v := expr.(type) {
+		case *ast.Variable:
 			return &ast.Assignment{Name: v.Name, Value: value}, nil
+		case *ast.Get:
+			return &ast.Set{
+				Object: v.Object,
+				Name:   v.Name,
+				Value:  value,
+			}, nil
+		default:
+			return nil, eq.MakeError("Invalid assignment target")
 		}
-		return nil, eq.MakeError("Invalid assignment target")
 	}
 	return expr, nil
 }
@@ -398,31 +446,44 @@ func (p *RecursiveDescent) Call() (ast.Expr, error) {
 	if err != nil {
 		return nil, err
 	}
-	for p.TakeIfType(lexer.LEFT_PAREN) {
-		args := make([]ast.Expr, 0)
-		if !p.MatchType(lexer.RIGHT_PAREN) {
-			for {
-				if len(args) > 255 {
-					fmt.Println(p.Peek().MakeError("can't have more than 255 args").Error())
-				}
-				expr, err := p.Expression()
-				if err != nil {
-					return nil, err
-				}
-				args = append(args, expr)
-				if !p.TakeIfType(lexer.COMMA) {
-					break
+	for !p.IsAtEnd() {
+		switch p.Next().Type {
+		case lexer.LEFT_PAREN:
+			args := make([]ast.Expr, 0)
+			if !p.MatchType(lexer.RIGHT_PAREN) {
+				for {
+					if len(args) > 255 {
+						fmt.Println(p.Peek().MakeError("can't have more than 255 args").Error())
+					}
+					expr, err := p.Expression()
+					if err != nil {
+						return nil, err
+					}
+					args = append(args, expr)
+					if !p.TakeIfType(lexer.COMMA) {
+						break
+					}
 				}
 			}
-		}
-		tok := p.Next()
-		if tok.Type != lexer.RIGHT_PAREN {
-			return nil, tok.MakeError("expect closing ')' in function call")
-		}
-		callee = &ast.Call{
-			Callee:       callee,
-			ClosingParen: tok,
-			Args:         args,
+			tok := p.Next()
+			if tok.Type != lexer.RIGHT_PAREN {
+				return nil, tok.MakeError("expect closing ')' in function call")
+			}
+			callee = &ast.Call{
+				Callee:       callee,
+				ClosingParen: tok,
+				Args:         args,
+			}
+
+		case lexer.DOT:
+			name, err := p.Consume(lexer.IDENT, "Expect property name after '.'")
+			if err != nil {
+				return nil, err
+			}
+			callee = &ast.Get{Object: callee, Name: name}
+		default:
+			p.Back()
+			return callee, nil
 		}
 	}
 	return callee, nil
@@ -430,21 +491,21 @@ func (p *RecursiveDescent) Call() (ast.Expr, error) {
 
 // primary -> "true" | "false" | "nil" | NUMBER | STRING | "(" expression ")" | IDENT ;
 func (p *RecursiveDescent) Primary() (ast.Expr, error) {
-	if p.TakeIfType(lexer.FALSE) {
+	switch p.Next().Type {
+	case lexer.FALSE:
 		return &ast.Literal{Value: false}, nil
-	}
-	if p.TakeIfType(lexer.TRUE) {
+	case lexer.TRUE:
 		return &ast.Literal{Value: true}, nil
-	}
-	if p.TakeIfType(lexer.NIL) {
+	case lexer.NIL:
 		return &ast.Literal{Value: nil}, nil
-	}
-	if p.TakeIfType(lexer.NUMBER, lexer.STRING) {
+	case lexer.THIS:
+		p.Back()
+		t := p.Next()
+		return &ast.This{Keyword: t}, nil
+	case lexer.NUMBER, lexer.STRING:
 		p.Back()
 		return &ast.Literal{Value: p.Next().Value}, nil
-	}
-
-	if p.TakeIfType(lexer.LEFT_PAREN) {
+	case lexer.LEFT_PAREN:
 		e, err := p.Expression()
 		if err != nil {
 			return nil, err
@@ -453,13 +514,11 @@ func (p *RecursiveDescent) Primary() (ast.Expr, error) {
 			return nil, p.Peek().MakeError("expected ending ')'.")
 		}
 		return &ast.Grouping{Expression: e}, nil
-	}
-
-	if p.TakeIfType(lexer.IDENT) {
+	case lexer.IDENT:
 		p.Back()
 		return &ast.Variable{Name: p.Next()}, nil
 	}
-
+	p.Back()
 	return nil, p.Peek().MakeError("unexpected token.")
 }
 
