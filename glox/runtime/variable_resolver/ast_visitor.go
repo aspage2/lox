@@ -98,7 +98,7 @@ func (r *resolver) VisitVariable(e *ast.Variable) error {
 }
 
 func (r *resolver) VisitAssignment(e *ast.Assignment) error {
-	if err := e.Value.Accept(r); e != nil {
+	if err := e.Value.Accept(r); err != nil {
 		return err
 	}
 	r.ResolveLocal(e, e.Name)
