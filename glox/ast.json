@@ -28,6 +28,10 @@
 			"Name lexer.Token",
 			"Value Expr"
 		],
+		"Super": [
+			"Keyword lexer.Token",
+			"Method lexer.Token"
+		],
 		"This": [
 			"Keyword lexer.Token"
 		],
@@ -42,7 +46,11 @@
 	"Stmt": {
 		"Block": ["Statements []Stmt"],
 		"Break": ["Continue bool"],
-		"Class": ["Name lexer.Token", "Methods []*Function"],
+		"Class": [
+			"Name lexer.Token", 
+			"Methods []*Function",
+			"Superclass *Variable"
+		],
 		"Expression": ["Expression Expr"],
 		"Function": [
 			"Name lexer.Token",

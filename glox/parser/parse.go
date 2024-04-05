@@ -65,6 +65,16 @@ func (p *RecursiveDescent) ClassDeclaration() (ast.Stmt, error) {
 	if err != nil {
 		return nil, err
 	}
+	var superclass *ast.Variable
+	if p.TakeIfType(lexer.LT) {
+		v, err := p.Consume(lexer.IDENT, "expect subclass name after '<'")
+		if err != nil {
+			return nil, err
+		}
+		superclass = &ast.Variable{
+			Name: v,
+		}
+	}
 	_, err = p.Consume(lexer.LEFT_BRACE, "expect '{' after class name")
 	if err != nil {
 		return nil, err
@@ -81,7 +91,11 @@ func (p *RecursiveDescent) ClassDeclaration() (ast.Stmt, error) {
 	if err != nil {
 		return nil, err
 	}
-	return &ast.Class{Name: name, Methods: methods}, nil
+	return &ast.Class{
+		Name: name,
+		Methods: methods,
+		Superclass: superclass,
+	}, nil
 }
 
 // Parse a function declaration. Kind is one of "function" or "method".
@@ -491,7 +505,8 @@ func (p *RecursiveDescent) Call() (ast.Expr, error) {
 
 // primary -> "true" | "false" | "nil" | NUMBER | STRING | "(" expression ")" | IDENT ;
 func (p *RecursiveDescent) Primary() (ast.Expr, error) {
-	switch p.Next().Type {
+	tok := p.Next()
+	switch tok.Type {
 	case lexer.FALSE:
 		return &ast.Literal{Value: false}, nil
 	case lexer.TRUE:
@@ -499,12 +514,9 @@ func (p *RecursiveDescent) Primary() (ast.Expr, error) {
 	case lexer.NIL:
 		return &ast.Literal{Value: nil}, nil
 	case lexer.THIS:
-		p.Back()
-		t := p.Next()
-		return &ast.This{Keyword: t}, nil
+		return &ast.This{Keyword: tok}, nil
 	case lexer.NUMBER, lexer.STRING:
-		p.Back()
-		return &ast.Literal{Value: p.Next().Value}, nil
+		return &ast.Literal{Value: tok.Value}, nil
 	case lexer.LEFT_PAREN:
 		e, err := p.Expression()
 		if err != nil {
@@ -515,8 +527,21 @@ func (p *RecursiveDescent) Primary() (ast.Expr, error) {
 		}
 		return &ast.Grouping{Expression: e}, nil
 	case lexer.IDENT:
-		p.Back()
-		return &ast.Variable{Name: p.Next()}, nil
+		return &ast.Variable{Name: tok}, nil
+	case lexer.SUPER:
+		const errMsg = "super expression must be of the form \"super.{method name}\""
+		_, err := p.Consume(lexer.DOT, errMsg)
+		if err != nil {
+			return nil, err
+		}
+		methodName, err := p.Consume(lexer.IDENT, errMsg)
+		if err != nil {
+			return nil, err
+		}
+		return &ast.Super{
+			Keyword: tok,
+			Method: methodName,
+		}, nil
 	}
 	p.Back()
 	return nil, p.Peek().MakeError("unexpected token.")

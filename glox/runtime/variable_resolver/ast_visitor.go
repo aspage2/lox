@@ -17,9 +17,21 @@ type ClassType int
 const (
 	CLASSTYPE_NONE = iota
 	CLASSTYPE_CLASS
+	CLASSTYPE_SUBCLASS
 )
 
 // ---------------- Visitor Implementation ----------------
+
+func (r *resolver) VisitSuper(expr *ast.Super) error {
+	switch r.currentClass {
+	case CLASSTYPE_NONE:
+		return expr.Keyword.MakeError("Can't use 'super' outside of a class.")
+	case CLASSTYPE_CLASS:
+		return expr.Keyword.MakeError("The current class has no superclass.")
+	}
+	r.ResolveLocal(expr, expr.Keyword)
+	return nil
+}
 
 func (r *resolver) VisitThis(expr *ast.This) error {
 	if r.currentClass == CLASSTYPE_NONE {
@@ -49,6 +61,25 @@ func (r *resolver) VisitClass(stmt *ast.Class) error {
 	defer func() { r.currentClass = prevClass }()
 	r.Declare(stmt.Name.Lexeme)
 	r.Define(stmt.Name.Lexeme)
+
+	if stmt.Superclass != nil {
+
+		// Edge case: class X < X {}
+		if stmt.Superclass.Name.Lexeme == stmt.Name.Lexeme {
+			return stmt.Superclass.Name.MakeError("a class cannot inherit from itself")
+		}
+
+		r.currentClass = CLASSTYPE_SUBCLASS
+
+		if err := stmt.Superclass.Accept(r); err != nil {
+			return err
+		}
+		r.BeginScope()
+		// Even though this is defined in a block, the
+		// go runtime will execute this at the end of the function.
+		defer r.EndScope()
+		r.CurrentScope()["super"] = true
+	}
 
 	r.BeginScope()
 	defer r.EndScope()

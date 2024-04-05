@@ -52,6 +52,33 @@ func (te *TreeEvaluator) VariableLookup(name lexer.Token, expr ast.Expr) (any, b
 	return te.BaseEnv.Get(name.Lexeme)
 }
 
+func (te *TreeEvaluator) VisitSuper(expr *ast.Super) error {
+	dist := te.Locals[expr]
+	maybeSuperclass, ok := te.env.GetAt(dist, "super")
+	if !ok {
+		return expr.Keyword.MakeError("'super' couldn't be found")
+	}
+	superclass, ok := maybeSuperclass.(*LoxClass)
+	if !ok {
+		return expr.Keyword.MakeError("`super` is not a LoxClass")
+	}
+
+	maybeInst, ok := te.env.GetAt(dist - 1, "this")
+	if !ok {
+		return expr.Keyword.MakeError("`this` isn't defined where I expected.")
+	}
+	instance, ok := maybeInst.(*LoxInstance)
+	if !ok {
+		return expr.Keyword.MakeError("`this` isn't a LoxInstance")
+	}
+	method, ok := superclass.FindMethod(expr.Method.Lexeme)
+	if !ok {
+		return expr.Method.MakeError("method not found")
+	}
+	te.result = method.Bind(instance)
+	return nil
+}
+
 func (te *TreeEvaluator) VisitThis(expr *ast.This) error {
 	val, ok := te.VariableLookup(expr.Keyword, expr)
 	if !ok {
@@ -92,8 +119,24 @@ func (te *TreeEvaluator) VisitGet(expr *ast.Get) error {
 }
 
 func (te *TreeEvaluator) VisitClass(stmt *ast.Class) error {
+	var superclass *LoxClass
+	if stmt.Superclass != nil {
+		if err := stmt.Superclass.Accept(te); err != nil {
+			return err
+		}
+		scls, ok := te.result.(*LoxClass)
+		if !ok {
+			return stmt.Superclass.Name.MakeError("term is a variable that doesn't contain a Lox Class")
+		}
+		superclass = scls
+	}
 	name := stmt.Name.Lexeme
 	te.env.Declare(name, nil)
+	if stmt.Superclass != nil {
+		te.env = te.env.EnterScope()
+		te.env.Declare("super", superclass)
+		defer func() { te.env = te.env.ExitScope() }()
+	}
 	methods := make(map[string]*LoxFunction)
 	for _, method := range stmt.Methods {
 		f := &LoxFunction{
@@ -102,7 +145,7 @@ func (te *TreeEvaluator) VisitClass(stmt *ast.Class) error {
 		}
 		methods[method.Name.Lexeme] = f
 	}
-	cls := &LoxClass{Name: name, Methods: methods}
+	cls := &LoxClass{Name: name, Methods: methods, Superclass: superclass}
 	te.env.Assign(name, cls)
 
 	return nil

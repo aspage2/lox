@@ -7,6 +7,7 @@ import (
 type LoxClass struct {
 	Name    string
 	Methods map[string]*LoxFunction
+	Superclass *LoxClass
 }
 
 func (cls *LoxClass) Call(lox *TreeEvaluator, args []any) (any, error) {
@@ -30,7 +31,13 @@ func (cls *LoxClass) String() string {
 
 func (cls *LoxClass) FindMethod(name string) (*LoxFunction, bool) {
 	val, ok := cls.Methods[name]
-	return val, ok
+	if ok {
+		return val, true
+	}
+	if cls.Superclass != nil {
+		return cls.Superclass.FindMethod(name)
+	}
+	return nil, false
 }
 
 type LoxInstance struct {

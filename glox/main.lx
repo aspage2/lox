@@ -1,14 +1,36 @@
 
-
-class FooBar {
-	init(a) {
-		this.a = a;
+class ListNode {
+	init(val, rest) {
+		this.val = val;
+		this.rest = rest;
 	}
-	foo(x) {
-		return x + this.a;
+	cons(val) {
+		return ListNode(val, this);
+	}
+
+	head() {
+		return this.val;
+	}
+
+	tail() {
+		return this.rest;
 	}
 }
 
-var f = FooBar(3);
-print f.foo(4);
+fun singularList(val) {
+	return ListNode(val, nil);
+}
+
+fun printList(l) {
+	fun lc(x) {
+		if (x == nil) {
+			return "";
+		}
+		return to_string(x.head()) + " " + lc(x.tail());
+	}
+	return "[ " + lc(l) + "]";
+}
+
+print(printList(singularList(1).cons(2).cons(3).cons(4)));
+
 
