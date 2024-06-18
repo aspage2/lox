@@ -3,6 +3,8 @@
 
 **/*.cover
 
+.ccls-cache/
+
 tree-sitter-lox/Cargo.toml
 tree-sitter-lox/node_modules/
 tree-sitter-lox/binding.gyp
