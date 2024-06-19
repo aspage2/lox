@@ -103,32 +103,16 @@ void showToken(Token t) {
 		case TOKEN_EOF:				p = "EOF"; break;
 		
 		case TOKEN_IDENT:
-			s = malloc(t.length + 1);
-			strncpy(s, t.start, t.length);
-			s[t.length] = '\0';
-			printf("IDENT(%s)\n", s);
-			free(s);
+			printf("IDENT(%.*s)\n", t.length, s);
 			return;
 		case TOKEN_STRING:
-			s = malloc(t.length + 1);
-			strncpy(s, t.start, t.length);
-			s[t.length] = '\0';
-			printf("STRING(%s)\n", s);
-			free(s);
+			printf("STRING(%.*s)\n", t.length, s);
 			return;
 		case TOKEN_NUMBER:
-			s = malloc(t.length + 1);
-			strncpy(s, t.start, t.length);
-			s[t.length] = '\0';
-			printf("NUMBER(%s)\n", s);
-			free(s);
+			printf("NUMBER(%.*s)\n", t.length, s);
 			return;
 		case TOKEN_ERROR: 
-			s = malloc(t.length + 1);
-			strncpy(s, t.start, t.length);
-			s[t.length] = '\0';
-			printf("ERROR(%s)\n", s);
-			free(s);
+			printf("ERROR(%.*s)\n", t.length, s);
 			return;
 		default:
 			p = "???";
