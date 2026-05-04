@@ -4,35 +4,60 @@ const Io = std.Io;
 const zlox = @import("zlox");
 
 const inst = @import("inst.zig");
-const vm  = @import("vm.zig");
+const vm = @import("vm.zig");
+const compiler = @import("compiler.zig");
 
+test {
+    std.testing.refAllDecls(@This());
+}
 
 pub fn main(init: std.process.Init) !void {
-    // Prints to stderr, unbuffered, ignoring potential errors.
-    std.debug.print("All your {s} are belong to us.\n", .{"codebase"});
-
-
-    // This is appropriate for anything that lives as long as the process.
+    // This is appropriate for anything that lives
+    // as long as the process.
     const arena: std.mem.Allocator = init.arena.allocator();
 
-    var c: inst.Chunk = try .init(arena);
-    defer c.deinit();
+    const argv = try init.minimal.args.toSlice(arena);
 
     var machine: vm.VM = try .init(arena);
     defer machine.deinit();
 
-    const valIndex = try c.addConstant(1.11);
+    switch (argv.len) {
+        1 => try repl(arena, &machine, init.io),
+        2 => try runFile(
+            arena,
+            &machine,
+            try std.Io.Dir.cwd().openFile(init.io, argv[1], .{ .mode = .read_only }),
+            init.io,
+        ),
 
-    try c.putOpCode(inst.OpCode.OP_CONSTANT, 1);
-    try c.put(@intCast(valIndex), 1);
-
-    try c.putOpCode(inst.OpCode.OP_RETURN, 1);
-
-    _ = try c.disassemble("My Chunk");
-
-    std.debug.print("Running Interpreter\n", .{});
-    const res = try machine.interpret(&c);
-
-    std.debug.print("{}\n", .{res});
+        else => {
+            std.debug.print("Usage: ./main [file]", .{});
+            std.process.exit(1);
+        },
+    }
 }
 
+fn repl(_: std.mem.Allocator, machine: *vm.VM, io: std.Io) !void {
+    const stdin = std.Io.File.stdin();
+    var lineBuf: [1024]u8 = undefined;
+    var rd = stdin.readerStreaming(io, lineBuf[0..]);
+    std.debug.print("> ", .{});
+    while (try rd.interface.takeDelimiter('\n')) |line| {
+        _ = try machine.interpret(line);
+    }
+}
+
+fn runFile(
+    alloc: std.mem.Allocator,
+    machine: *vm.VM,
+    file: std.Io.File,
+    io: std.Io,
+) !void {
+    var buf: [1024]u8 = undefined;
+    var rd = file.reader(io, buf[0..]);
+
+    const fileSize = try file.length(io);
+    const source = try rd.interface.readAlloc(alloc, fileSize);
+    defer alloc.free(source);
+    _ = try machine.interpret(source);
+}

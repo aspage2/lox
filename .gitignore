@@ -12,3 +12,4 @@ tree-sitter-lox/bindings/
 tree-sitter-lox/src/
 
 .zig-cache
+zig-out/
