@@ -1,4 +1,6 @@
 const std = @import("std");
+const value = @import("value.zig");
+const inst = @import("inst.zig");
 const testing = std.testing;
 
 pub const Token = struct {
@@ -100,15 +102,13 @@ pub const TokenType = enum(u8) {
 };
 
 pub const Scanner = struct {
-    alloc: std.mem.Allocator,
     source: []const u8,
     start: usize,
     pos: usize,
     line: usize,
 
-    pub fn init(alloc: std.mem.Allocator, source: []const u8) Scanner {
+    pub fn init(source: []const u8) Scanner {
         return .{
-            .alloc = alloc,
             .source = source,
             .start = 0,
             .pos = 0,
@@ -119,6 +119,7 @@ pub const Scanner = struct {
     /// Detect and consume an arbitrary token from the input.
     pub fn scanToken(self: *Scanner) Token {
         self.start = self.pos;
+        self.skipWhitespace();
         if (self.advance()) |c| {
             if (std.ascii.isAlphabetic(c)) {
                 return self.ident();
@@ -142,7 +143,10 @@ pub const Scanner = struct {
                 '=' => return self.emit(if (self.match('=')) .DoubleEqual else .Equal),
                 '>' => return self.emit(if (self.match('=')) .GreaterEqual else .Greater),
                 '<' => return self.emit(if (self.match('=')) .LessEqual else .Less),
-                '"' => return self.string(),
+                '"' => {
+                    self.discardToken(); // Discard "
+                    return self.string();
+                },
                 else => {},
             }
             return self.err("unexpected character");
@@ -150,6 +154,7 @@ pub const Scanner = struct {
             return self.emit(.Eof);
         }
     }
+
     fn emit(self: *Scanner, typ: TokenType) Token {
         return .{
             .type = typ,
@@ -157,12 +162,18 @@ pub const Scanner = struct {
             .line = self.line,
         };
     }
+
     fn err(self: *Scanner, msg: []const u8) Token {
         return .{
             .type = .Error,
             .data = msg,
             .line = self.line,
         };
+    }
+
+    /// Drop the working span without emitting a token value.
+    fn discardToken(self: *Scanner) void {
+        self.start = self.pos;
     }
 
     fn ident(self: *Scanner) Token {
@@ -228,6 +239,7 @@ pub const Scanner = struct {
                         var tok = self.emit(.String);
                         tok.line = line;
                         self.step();
+                        self.discardToken(); // Discard ending "
                         return tok;
                     },
                     '\n' => self.line += 1,
@@ -252,26 +264,27 @@ pub const Scanner = struct {
     }
 
     pub fn skipWhitespace(self: *Scanner) void {
-        while (self.peek()) |c| {
+        mainblk: while (self.peek()) |c| {
             switch (c) {
                 ' ', '\r', '\t' => self.step(),
                 '\n' => {
                     self.step();
                     self.line += 1;
                 },
-                '/' => blk: {
+                '/' => {
                     if (self.peekNext()) |cn| {
-                        if (cn != '/') return;
+                        if (cn != '/') break :mainblk;
                         while (self.peek()) |ca| {
                             if (ca == '\n')
-                                break :blk;
+                                break;
                             self.step();
                         }
                     }
                 },
-                else => return,
+                else => break :mainblk,
             }
         }
+        self.discardToken();
     }
 
     inline fn isAtEnd(self: *Scanner) bool {
@@ -293,15 +306,15 @@ fn expectTokenValue(
     lineNo: usize,
     content: []const u8,
 ) !void {
-    try testing.expectEqualStrings(content, tok.data);
-    try testing.expectEqual(lineNo, tok.line);
     try testing.expectEqual(typ, tok.type);
+    try testing.expectEqual(lineNo, tok.line);
+    try testing.expectEqualStrings(content, tok.data);
 }
 
 // NUMBER token tests
 test "basic number" {
     const source = "3.1415";
-    var sc: Scanner = .init(testing.allocator, source);
+    var sc: Scanner = .init(source);
 
     const tok = sc.number();
 
@@ -310,7 +323,7 @@ test "basic number" {
 
 test "bare number" {
     const source = "1337; hello";
-    var sc: Scanner = .init(testing.allocator, source);
+    var sc: Scanner = .init(source);
 
     const tok = sc.number();
     try expectTokenValue(tok, .Number, 1, "1337");
@@ -318,7 +331,7 @@ test "bare number" {
 
 test "no bare dot" {
     const source = "444.";
-    var sc: Scanner = .init(testing.allocator, source);
+    var sc: Scanner = .init(source);
 
     const tok = sc.number();
 
@@ -328,7 +341,7 @@ test "no bare dot" {
 // String token
 test "simple string" {
     const source = "hello, world\"";
-    var sc: Scanner = .init(testing.allocator, source);
+    var sc: Scanner = .init(source);
 
     const tok = sc.string();
     try expectTokenValue(tok, .String, 1, "hello, world");
@@ -339,7 +352,7 @@ test "multiline string" {
         \\Hello, world
         \\this is my string"
     ;
-    var sc: Scanner = .init(testing.allocator, source);
+    var sc: Scanner = .init(source);
 
     try expectTokenValue(sc.string(), .String, 1, "Hello, world\nthis is my string");
     try testing.expectEqual(2, sc.line);
@@ -347,13 +360,13 @@ test "multiline string" {
 
 test "string then ws" {
     const source = "foobar\"     ";
-    var sc: Scanner = .init(testing.allocator, source);
+    var sc: Scanner = .init(source);
     try expectTokenValue(sc.string(), .String, 1, "foobar");
 }
 
 test "skipWhitespace" {
     const source = " \t\n\rabc";
-    var sc: Scanner = .init(testing.allocator, source);
+    var sc: Scanner = .init(source);
     sc.skipWhitespace();
     try testing.expectEqual(4, sc.pos);
 }
@@ -363,14 +376,14 @@ test "skipWhitespace comment" {
         \\// hello, world
         \\this is actual code
     ;
-    var sc: Scanner = .init(testing.allocator, source);
+    var sc: Scanner = .init(source);
     sc.skipWhitespace();
     try testing.expectEqual(16, sc.pos);
 }
 
 test "skipWhitespace not comment" {
     const source = " / my_value";
-    var sc: Scanner = .init(testing.allocator, source);
+    var sc: Scanner = .init(source);
     sc.skipWhitespace();
     try testing.expectEqual(1, sc.pos);
 }
@@ -398,8 +411,50 @@ test "ident" {
     };
 
     for (tcs) |tc| {
-        var sc: Scanner = .init(std.testing.allocator, tc.source);
+        var sc: Scanner = .init(tc.source);
         const tok = sc.ident();
         try expectTokenValue(tok, tc.typ, 1, tc.source);
     }
+}
+
+test "scanner" {
+    const source =
+        \\class MyClass {
+        \\  constructor() {
+        \\    this.x = 33.0 + 45;
+        \\    this.y = "Hello, world";
+        \\  }
+        \\}
+        \\
+    ;
+    var sc: Scanner = .init(source);
+
+    try expectTokenValue(sc.scanToken(), .Class, 1, "class");
+    try expectTokenValue(sc.scanToken(), .Ident, 1, "MyClass");
+    try expectTokenValue(sc.scanToken(), .LeftBrace, 1, "{");
+    try expectTokenValue(sc.scanToken(), .Ident, 2, "constructor");
+    try expectTokenValue(sc.scanToken(), .LeftParen, 2, "(");
+    try expectTokenValue(sc.scanToken(), .RightParen, 2, ")");
+    try expectTokenValue(sc.scanToken(), .LeftBrace, 2, "{");
+    try expectTokenValue(sc.scanToken(), .This, 3, "this");
+    try expectTokenValue(sc.scanToken(), .Dot, 3, ".");
+    try expectTokenValue(sc.scanToken(), .Ident, 3, "x");
+    try expectTokenValue(sc.scanToken(), .Equal, 3, "=");
+    try expectTokenValue(sc.scanToken(), .Number, 3, "33.0");
+    try expectTokenValue(sc.scanToken(), .Plus, 3, "+");
+    try expectTokenValue(sc.scanToken(), .Number, 3, "45");
+    try expectTokenValue(sc.scanToken(), .Semicolon, 3, ";");
+    try expectTokenValue(sc.scanToken(), .This, 4, "this");
+    try expectTokenValue(sc.scanToken(), .Dot, 4, ".");
+    try expectTokenValue(sc.scanToken(), .Ident, 4, "y");
+    try expectTokenValue(sc.scanToken(), .Equal, 4, "=");
+    try expectTokenValue(sc.scanToken(), .String, 4, "Hello, world");
+    try expectTokenValue(sc.scanToken(), .Semicolon, 4, ";");
+    try expectTokenValue(sc.scanToken(), .RightBrace, 5, "}");
+    try expectTokenValue(sc.scanToken(), .RightBrace, 6, "}");
+}
+
+pub fn compile(source: []const u8, chunk: *inst.Chunk) !void {
+    _ = source;
+    _ = chunk;
 }

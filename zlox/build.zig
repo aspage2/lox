@@ -12,10 +12,10 @@ pub fn build(b: *std.Build) void {
 
     // Custom Build options
     const options = b.addOptions();
-    const debug_build = b.option(bool, "debug_build", "enable debug features") orelse false;
-    options.addOption(bool, "debug_build", debug_build);
+    const debug_build = b.option(bool, "lox_debug", "enable debug features") orelse false;
+    options.addOption(bool, "lox_debug", debug_build);
 
-    exe.root_module.addOptions("build_config", options);
+    exe.root_module.addOptions("build_options", options);
 
     b.installArtifact(exe);
 
@@ -31,6 +31,7 @@ pub fn build(b: *std.Build) void {
             .target = b.graph.host,
         }),
     });
+    unit_tests.root_module.addOptions("build_options", options);
     const run_unit_tests = b.addRunArtifact(unit_tests);
     test_step.dependOn(&run_unit_tests.step);
 }

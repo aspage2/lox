@@ -45,10 +45,14 @@ pub const VM = struct {
     pub fn deinit(_: *VM) void {}
 
     pub fn interpret(self: *VM, source: []const u8) !InterpretResult {
-        std.debug.print("Interpret {s}\n", .{source});
-        var sc: compiler.Scanner = .init(self.alloc, source);
-        _ = sc.scanToken();
-        return InterpretResult.Ok;
+        var chunk: inst.Chunk = try .init(self.alloc);
+        defer chunk.deinit();
+
+        try compiler.compile(source, &chunk);
+
+        self.chunk = &chunk;
+        self.ip = 0;
+        return self.run();
     }
 
     fn run(self: *VM) !InterpretResult {
