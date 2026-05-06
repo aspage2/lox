@@ -1,6 +1,8 @@
 const std = @import("std");
+
 const inst = @import("inst.zig");
 const value = @import("value.zig");
+
 const compiler = @import("compiler.zig");
 
 const build_opts = @import("build_options");
@@ -42,7 +44,8 @@ pub const VM = struct {
         return ret;
     }
 
-    pub fn deinit(_: *VM) void {}
+    pub fn deinit(_: *VM) void {
+    }
 
     pub fn interpret(self: *VM, source: []const u8) !InterpretResult {
         var chunk: inst.Chunk = try .init(self.alloc);
@@ -52,6 +55,9 @@ pub const VM = struct {
 
         self.chunk = &chunk;
         self.ip = 0;
+        if (build_opts.lox_debug) {
+            std.debug.print("--- RUNNING ---\n", .{});
+        }
         return self.run();
     }
 
@@ -71,7 +77,7 @@ pub const VM = struct {
             }
             switch (codePtr[self.ip]) {
                 @intFromEnum(inst.OpCode.Return) => {
-                    // FixMe: Impleent return semantics
+                    // FixMe: Implement return semantics
                     std.debug.print("Returning value: ", .{});
                     value.printValue(try self.stackPop());
                     std.debug.print("\n", .{});

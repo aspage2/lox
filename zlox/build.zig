@@ -34,4 +34,18 @@ pub fn build(b: *std.Build) void {
     unit_tests.root_module.addOptions("build_options", options);
     const run_unit_tests = b.addRunArtifact(unit_tests);
     test_step.dependOn(&run_unit_tests.step);
+
+    const exe_check = b.addExecutable(.{
+        .name = "lox",
+        .root_module = exe.root_module,
+    });
+
+    const check = b.step("check", "compile check without install");
+    check.dependOn(&exe_check.step);
+
+    // Debugger
+    const lldb = b.addSystemCommand(&.{"lldb", "--"});
+    lldb.addArtifactArg(unit_tests);
+    const lldb_step = b.step("debug", "run lldb");
+    lldb_step.dependOn(&lldb.step);
 }
