@@ -43,7 +43,11 @@ fn repl(_: std.mem.Allocator, machine: *vm.VM, io: std.Io) !void {
     var rd = stdin.readerStreaming(io, lineBuf[0..]);
     std.debug.print("> ", .{});
     while (try rd.interface.takeDelimiter('\n')) |line| {
+        if (std.mem.eql(u8, line, "exit")) {
+            return;
+        }
         _ = try machine.interpret(line);
+        std.debug.print("> ", .{});
     }
 }
 

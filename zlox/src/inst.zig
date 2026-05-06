@@ -28,6 +28,19 @@ pub const OpCode = enum(u8) {
     // and push the result.
     // size: 1
     Divide,
+    // Push the NIL literal onto the stack
+    Nil,
+    // Push True onto the stack
+    True,
+    // Push False onto the stack
+    False,
+    // Invert the boolean value at the top of the stack
+    Not,
+    // Comparison checks (pop 2, compare, push result)
+    // The GTE/LTE operations are the opposite exclusive plus a NOT op
+    Equal,
+    Greater,
+    Less,
 };
 
 pub const InstructionError = error{
@@ -101,7 +114,7 @@ pub const Chunk = struct {
         self.lines.items[linesTop + 1] += 1;
     }
 
-    fn getLine(self: *const Chunk, codeIdx: usize) InstructionError!u32 {
+    pub fn getLine(self: *const Chunk, codeIdx: usize) InstructionError!u32 {
         if (codeIdx >= self.code.items.len) {
             return InstructionError.OutOfBounds;
         }
@@ -163,6 +176,13 @@ pub const Chunk = struct {
             @intFromEnum(OpCode.Subtract) => return simpleInstruction("OP_SUBTRACT", offset),
             @intFromEnum(OpCode.Multiply) => return simpleInstruction("OP_MULTIPLY", offset),
             @intFromEnum(OpCode.Divide) => return simpleInstruction("OP_DIVIDE", offset),
+            @intFromEnum(OpCode.Nil) => return simpleInstruction("OP_NIL", offset),
+            @intFromEnum(OpCode.True) => return simpleInstruction("OP_TRUE", offset),
+            @intFromEnum(OpCode.False) => return simpleInstruction("OP_FALSE", offset),
+            @intFromEnum(OpCode.Not) => return simpleInstruction("OP_NOT", offset),
+            @intFromEnum(OpCode.Equal) => return simpleInstruction("OP_EQUAL", offset),
+            @intFromEnum(OpCode.Less) => return simpleInstruction("OP_LESS", offset),
+            @intFromEnum(OpCode.Greater) => return simpleInstruction("OP_GREATER", offset),
             else => {
                 std.debug.print("Unknown opcode: {d}\n", .{inst});
                 return offset + 1;
@@ -179,6 +199,7 @@ fn simpleInstruction(name: []const u8, offset: usize) usize {
 fn constantInstruction(name: []const u8, chunk: *const Chunk, offset: usize) usize {
     const valueLoc: usize = @intCast(chunk.code.items[offset + 1]);
     std.debug.print("{s:<16} {d:>4} ", .{ name, valueLoc });
-    std.debug.print("{d}\n", .{chunk.constants.items[valueLoc]});
+    value.printValue(chunk.constants.items[valueLoc]);
+    std.debug.print("\n", .{});
     return offset + 2;
 }

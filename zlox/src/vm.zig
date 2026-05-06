@@ -44,8 +44,16 @@ pub const VM = struct {
         return ret;
     }
 
-    pub fn deinit(_: *VM) void {
+    fn stackReset(self: *VM) void {
+        self.stackSize = 0;
     }
+
+    fn stackDrop(self: *VM, n: usize) void {
+        if (self.stackSize < n) self.stackSize = 0;
+        self.stackSize -= n;
+    }
+
+    pub fn deinit(_: *VM) void {}
 
     pub fn interpret(self: *VM, source: []const u8) !InterpretResult {
         var chunk: inst.Chunk = try .init(self.alloc);
@@ -90,32 +98,122 @@ pub const VM = struct {
                     try self.stackPush(val);
                 },
                 @intFromEnum(inst.OpCode.Negate) => {
-                    const val = try self.stackPop();
-                    try self.stackPush(-val);
+                    const val = self.stackPeek(0).?;
+                    switch (val) {
+                        .Number => |n| {
+                            _ = try self.stackPop();
+                            try self.stackPush(.{ .Number = -n });
+                        },
+                        else => {
+                            self.runtimeError("Operand must be a number.", .{});
+                            return InterpretResult.RuntimeError;
+                        },
+                    }
                 },
                 @intFromEnum(inst.OpCode.Add) => {
-                    const b = try self.stackPop();
-                    const a = try self.stackPop();
-                    try self.stackPush(a + b);
+                    const b = self.stackPeek(0).?.expectType(.Number) orelse {
+                        self.runtimeError("Operands must be numbers", .{});
+                        return InterpretResult.RuntimeError;
+                    };
+                    const a = self.stackPeek(1).?.expectType(.Number) orelse {
+                        self.runtimeError("Operands must be numbers", .{});
+                        return InterpretResult.RuntimeError;
+                    };
+                    self.stackDrop(2);
+                    try self.stackPush(.{ .Number = a + b });
                 },
                 @intFromEnum(inst.OpCode.Subtract) => {
-                    const b = try self.stackPop();
-                    const a = try self.stackPop();
-                    try self.stackPush(a - b);
+                    const b = self.stackPeek(0).?.expectType(.Number) orelse {
+                        self.runtimeError("Operands must be numbers", .{});
+                        return InterpretResult.RuntimeError;
+                    };
+                    const a = self.stackPeek(1).?.expectType(.Number) orelse {
+                        self.runtimeError("Operands must be numbers", .{});
+                        return InterpretResult.RuntimeError;
+                    };
+                    self.stackDrop(2);
+                    try self.stackPush(.{ .Number = a - b });
                 },
                 @intFromEnum(inst.OpCode.Multiply) => {
-                    const b = try self.stackPop();
-                    const a = try self.stackPop();
-                    try self.stackPush(a * b);
+                    const b = self.stackPeek(0).?.expectType(.Number) orelse {
+                        self.runtimeError("Operands must be numbers", .{});
+                        return InterpretResult.RuntimeError;
+                    };
+                    const a = self.stackPeek(1).?.expectType(.Number) orelse {
+                        self.runtimeError("Operands must be numbers", .{});
+                        return InterpretResult.RuntimeError;
+                    };
+                    self.stackDrop(2);
+                    try self.stackPush(.{ .Number = a * b });
                 },
                 @intFromEnum(inst.OpCode.Divide) => {
-                    const b = try self.stackPop();
+                    const b = self.stackPeek(0).?.expectType(.Number) orelse {
+                        self.runtimeError("Operands must be numbers", .{});
+                        return InterpretResult.RuntimeError;
+                    };
+                    const a = self.stackPeek(1).?.expectType(.Number) orelse {
+                        self.runtimeError("Operands must be numbers", .{});
+                        return InterpretResult.RuntimeError;
+                    };
+                    self.stackDrop(2);
+                    try self.stackPush(.{ .Number = a / b });
+                },
+                @intFromEnum(inst.OpCode.Nil) => try self.stackPush(.Nil),
+                @intFromEnum(inst.OpCode.True) => try self.stackPush(.{ .Bool = true }),
+                @intFromEnum(inst.OpCode.False) => try self.stackPush(.{ .Bool = false }),
+                @intFromEnum(inst.OpCode.Not) => {
+                    const v = try self.stackPop();
+                    try self.stackPush(.{ .Bool = v.isFalsey() });
+                },
+                @intFromEnum(inst.OpCode.Equal) => {
                     const a = try self.stackPop();
-                    try self.stackPush(a / b);
+                    const b = try self.stackPop();
+                    try self.stackPush(.{ .Bool = a.equals(b) });
+                },
+                @intFromEnum(inst.OpCode.Less) => {
+                    const b = self.stackPeek(0).?.expectType(.Number) orelse {
+                        self.runtimeError("Operands must be numbers", .{});
+                        return InterpretResult.RuntimeError;
+                    };
+                    const a = self.stackPeek(1).?.expectType(.Number) orelse {
+                        self.runtimeError("Operands must be numbers", .{});
+                        return InterpretResult.RuntimeError;
+                    };
+                    self.stackDrop(2);
+                    try self.stackPush(.{ .Bool = a < b });
+                },
+                @intFromEnum(inst.OpCode.Greater) => {
+                    const b = self.stackPeek(0).?.expectType(.Number) orelse {
+                        self.runtimeError("Operands must be numbers", .{});
+                        return InterpretResult.RuntimeError;
+                    };
+                    const a = self.stackPeek(1).?.expectType(.Number) orelse {
+                        self.runtimeError("Operands must be numbers", .{});
+                        return InterpretResult.RuntimeError;
+                    };
+                    self.stackDrop(2);
+                    try self.stackPush(.{ .Bool = a > b });
                 },
                 else => {},
             }
         }
         return InterpretResult.RuntimeError;
+    }
+
+    fn stackPeek(self: *VM, depth: usize) ?value.Value {
+        if (self.stackSize <= depth) return null;
+        return self.stack[self.stackSize - 1 - depth];
+    }
+
+    fn runtimeError(self: *VM, comptime fmt: []const u8, args: anytype) void {
+        std.debug.print(fmt, args);
+        var l: u32 = 0;
+        if (self.chunk.getLine(self.ip)) |line| {
+            l = line;
+        } else |e| {
+            std.debug.print("err getting line: {any}\n", .{e});
+        }
+        std.debug.print("\n[line {d}] in script\n", .{l});
+        self.stackReset();
     }
 };
