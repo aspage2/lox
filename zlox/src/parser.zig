@@ -60,7 +60,7 @@ const ents = [_]Entry{
     ruleEntry(.Less, null, binary, .Equality),
     ruleEntry(.LessEqual, null, binary, .Equality),
     ruleEntry(.Ident, null, null, .None),
-    ruleEntry(.String, null, null, .None),
+    ruleEntry(.String, string, null, .None),
     ruleEntry(.Number, number, null, .None),
     ruleEntry(.And, null, null, .None),
     ruleEntry(.Class, null, null, .None),
@@ -85,18 +85,20 @@ const ents = [_]Entry{
 const parseRules: [maxRuleSize]ParseRule =
     makeRuleTable(maxRuleSize, @constCast(&ents));
 
-sc: *Scanner,
-compilingChunk: *Chunk,
-previous: Token = undefined,
-current: Token = undefined,
-hadError: bool = false,
-panicMode: bool = false,
-
 const ParseRule = struct { prefix: ?ParseFn, infix: ?ParseFn, precedence: Precedence };
 
 fn getRule(op: TokenType) *const ParseRule {
     return &parseRules[@intFromEnum(op)];
 }
+
+alloc: std.mem.Allocator,
+sc: *Scanner,
+compilingChunk: *Chunk,
+stringTable: *value.StringTable,
+previous: Token = undefined,
+current: Token = undefined,
+hadError: bool = false,
+panicMode: bool = false,
 
 const Precedence = enum(u8) {
     None,
@@ -144,8 +146,13 @@ const Precedence = enum(u8) {
     }
 };
 
-pub fn init(sc: *Scanner, chunk: *inst.Chunk) Parser {
-    return .{ .sc = sc, .compilingChunk = chunk };
+pub fn init(alloc: std.mem.Allocator, sc: *Scanner, chunk: *inst.Chunk, tbl: *value.StringTable) Parser {
+    return .{ 
+        .alloc = alloc,
+        .sc = sc,
+        .compilingChunk = chunk,
+        .stringTable = tbl,
+    };
 }
 
 pub fn advance(self: *Parser) void {
@@ -192,6 +199,13 @@ fn number(self: *Parser) !void {
 fn grouping(self: *Parser) !void {
     try self.expression();
     self.consume(.RightParen, "Expect ')' after expression");
+}
+
+fn string(self: *Parser) !void {
+    const sobj = try self.stringTable.make(self.previous.data);
+    const o = try self.alloc.create(value.Obj);
+    o.inst.String = sobj;
+    try self.emitConstant(.{.Obj = o});
 }
 
 fn binary(self: *Parser) !void {

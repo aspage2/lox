@@ -23,6 +23,10 @@ pub const VM = struct {
     stack: [StackMax]value.Value,
     stackSize: usize,
 
+    objList: ?*value.Obj,
+
+    strings: value.StringTable,
+
     pub fn init(alloc: std.mem.Allocator) !VM {
         return .{
             .alloc = alloc,
@@ -30,7 +34,36 @@ pub const VM = struct {
             .ip = undefined,
             .stackSize = 0,
             .stack = undefined,
+            .objList = undefined,
+            .strings = try .init(alloc),
         };
+    }
+
+    pub fn allocateObject(self: *VM) !*value.Obj {
+        const obj = try self.alloc.create(value.Obj);
+        obj.next = self.objList;
+        self.objList = obj;
+        return obj;
+    }
+
+    pub fn allocateString(self: *VM, data: []const u8) !*value.Obj {
+        const o = try self.allocateObject();
+        o.inst.String = try self.strings.make(data);
+        return o;
+    }
+
+    pub fn freeObject(self: *VM) void {
+        var maybeO = self.objList;
+        while (maybeO) |obj| {
+            maybeO = obj.next;
+            switch (obj.inst) {
+                .String => |s| {
+                    self.alloc.free(s.data);
+                    self.alloc.destroy(s);
+                },
+            }
+            self.alloc.destroy(obj);
+        }
     }
 
     pub fn stackPush(self: *VM, val: value.Value) !void {
@@ -59,14 +92,20 @@ pub const VM = struct {
         var chunk: inst.Chunk = try .init(self.alloc);
         defer chunk.deinit();
 
-        try compiler.compile(source, &chunk);
+        self.strings = try .init(self.alloc);
+        defer self.strings.deinit();
+
+        try compiler.compile(self.alloc, source, &chunk, &self.strings);
+        if (build_opts.lox_debug) self.strings.pprint();
 
         self.chunk = &chunk;
         self.ip = 0;
         if (build_opts.lox_debug) {
             std.debug.print("--- RUNNING ---\n", .{});
         }
-        return self.run();
+        const res = self.run();
+        if (build_opts.lox_debug) self.strings.pprint();
+        return res;
     }
 
     fn run(self: *VM) !InterpretResult {
@@ -111,16 +150,36 @@ pub const VM = struct {
                     }
                 },
                 @intFromEnum(inst.OpCode.Add) => {
-                    const b = self.stackPeek(0).?.expectType(.Number) orelse {
-                        self.runtimeError("Operands must be numbers", .{});
-                        return InterpretResult.RuntimeError;
-                    };
-                    const a = self.stackPeek(1).?.expectType(.Number) orelse {
-                        self.runtimeError("Operands must be numbers", .{});
-                        return InterpretResult.RuntimeError;
-                    };
-                    self.stackDrop(2);
-                    try self.stackPush(.{ .Number = a + b });
+                    const b = self.stackPeek(0).?;
+                    switch (b) {
+                        .Number => |bn| {
+                            const an = self.stackPeek(1).?.expectType(.Number) orelse {
+                                self.runtimeError("Operands must be numbers", .{});
+                                return InterpretResult.RuntimeError;
+                            };
+                            self.stackDrop(2);
+                            try self.stackPush(.{ .Number = an + bn });
+                        },
+                        .Obj => |bo| {
+                            const ao = self.stackPeek(1).?.expectType(.Obj) orelse {
+                                self.runtimeError("Operands for concat must be strings", .{});
+                                return InterpretResult.RuntimeError;
+                            };
+                            const boType = std.meta.activeTag(bo.inst);
+                            const aoType = std.meta.activeTag(ao.inst);
+                            if (boType != aoType or boType != .String) {
+                                self.runtimeError("Operands for concat must be strings", .{});
+                                return InterpretResult.RuntimeError;
+                            }
+                            self.stackDrop(2);
+                            const newData = try std.mem.concat(
+                                self.alloc, u8, &.{ao.inst.String.data, bo.inst.String.data},
+                            );
+                            defer self.alloc.free(newData);
+                            try self.stackPush(.{ .Obj = try self.allocateString(newData) });
+                        },
+                        else => unreachable,
+                    }
                 },
                 @intFromEnum(inst.OpCode.Subtract) => {
                     const b = self.stackPeek(0).?.expectType(.Number) orelse {

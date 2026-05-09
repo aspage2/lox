@@ -231,7 +231,7 @@ inline fn step(self: *Scanner) void {
 
 pub fn string(self: *Scanner) Token {
     const line = self.line;
-    while (true) : (self.step()) {
+    while (true) {
         if (self.peek()) |c| {
             switch (c) {
                 '"' => {
@@ -360,6 +360,12 @@ test "string then ws" {
     const source = "foobar\"     ";
     var sc: Scanner = .init(source);
     try expectTokenValue(sc.string(), .String, 1, "foobar");
+}
+
+test "string then nl" {
+    const source = "foobarz\"\n";
+    var sc: Scanner = .init(source);
+    try expectTokenValue(sc.string(), .String, 1, "foobarz");
 }
 
 test "skipWhitespace" {
