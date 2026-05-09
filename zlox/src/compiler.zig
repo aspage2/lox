@@ -9,13 +9,16 @@ pub fn compile(
     source: []const u8,
     chunk: *Chunk,
     st: *StringTable,
-) !void {
+) !bool {
     var sc: Scanner = .init(source);
     var parser: Parser = .init(alloc, &sc, chunk, st);
 
     parser.advance();
 
-    try parser.expression();
+    while (!parser.match(.Eof)) {
+        try parser.declaration();
+    }
 
     try parser.end();
+    return parser.hadError;
 }

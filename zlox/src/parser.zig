@@ -59,7 +59,7 @@ const ents = [_]Entry{
     ruleEntry(.GreaterEqual, null, binary, .Equality),
     ruleEntry(.Less, null, binary, .Equality),
     ruleEntry(.LessEqual, null, binary, .Equality),
-    ruleEntry(.Ident, null, null, .None),
+    ruleEntry(.Ident, variable, null, .None),
     ruleEntry(.String, string, null, .None),
     ruleEntry(.Number, number, null, .None),
     ruleEntry(.And, null, null, .None),
@@ -187,6 +187,81 @@ fn errorAt(self: *Parser, tok: *const Token, msg: []const u8) void {
     self.hadError = true;
 }
 
+pub fn declaration(self: *Parser) !void {
+    if (self.match(.Var)) {
+        try self.varDeclaration();
+    } else {
+        try self.statement();
+    }
+
+    if (self.panicMode) self.synchronize();
+}
+
+fn varDeclaration(self: *Parser) !void {
+    const global = try self.parseVariable("Expect varnae");
+    if (self.match(.Equal)) {
+        try self.expression();
+    } else {
+        try self.emitOpCode(.Nil);
+    }
+    self.consumeSemicolon();
+    try self.defineVariable(global);
+}
+
+fn parseVariable(self: *Parser, comptime errMsg: []const u8) !u8{
+    self.consume(.Ident, errMsg);
+    return try self.identifierConstant(self.previous);
+}
+
+fn identifierConstant(self: *Parser, tok: Token) !u8{
+    const sobj = try self.stringTable.make(tok.data);
+    const o = try self.alloc.create(value.Obj);
+    o.inst.String = sobj;
+    return try self.makeConstant(.{ .Obj = o});
+}
+
+fn defineVariable(self: *Parser, loc: u8) !void {
+    try self.emitTwo(.DefineGlobal, loc);
+}
+
+inline fn consumeSemicolon(self: *Parser) void {
+    self.consume(.Semicolon, "expect statement to end with ';'");
+}
+
+fn synchronize(self: *Parser) void {
+    self.panicMode = false;
+
+    while (self.current.type != .Eof) {
+        if (self.previous.type == .Semicolon) return;
+
+        switch (self.current.type) {
+        .Class, .Fun, .Var, .For, .If, .While, .Print, .Return => return,
+        else => {},
+        }
+        self.advance();
+    }
+}
+
+pub fn statement(self: *Parser) !void {
+    if (self.match(.Print)) {
+        try self.printStatement();
+    } else {
+        try self.expressionStatement();
+    }
+}
+
+pub fn printStatement(self: *Parser) !void {
+    try self.expression();
+    try self.emitOpCode(.Print);
+    self.consumeSemicolon();
+}
+
+fn expressionStatement(self: *Parser) !void {
+    try self.expression();
+    self.consumeSemicolon();
+    try self.emitOpCode(.Pop);
+}
+
 pub fn expression(self: *Parser) !void {
     try self.parsePrecedence(.Assignment);
 }
@@ -206,6 +281,15 @@ fn string(self: *Parser) !void {
     const o = try self.alloc.create(value.Obj);
     o.inst.String = sobj;
     try self.emitConstant(.{.Obj = o});
+}
+
+fn variable(self: *Parser) !void {
+    return self.namedVariable(self.previous);
+}
+
+fn namedVariable(self: *Parser, name: Token) !void {
+    const arg = try self.identifierConstant(name);
+    try self.emitTwo(.GetGlobal, arg);
 }
 
 fn binary(self: *Parser) !void {
@@ -295,6 +379,17 @@ fn makeConstant(self: *Parser, val: value.Value) !u8 {
     }
     return @intCast(valLoc);
 }
+
+inline fn check(self: *Parser, typ: TokenType) bool {
+    return self.current.type == typ;
+}
+
+pub fn match(self: *Parser, typ: TokenType) bool {
+    if (!self.check(typ)) return false;
+    self.advance();
+    return true;
+}
+
 fn currentChunk(self: *Parser) *inst.Chunk {
     return self.compilingChunk;
 }
@@ -314,7 +409,7 @@ fn emitTwo(self: *Parser, code: inst.OpCode, b: u8) !void {
 }
 
 pub fn end(self: *Parser) !void {
-    try self.emitOpCode(.Return);
+    // try self.emitOpCode(.Return);
     if (build_options.lox_debug and !self.hadError) {
         try self.currentChunk().disassemble("code");
     }

@@ -456,4 +456,5 @@ test "scanner" {
     try expectTokenValue(sc.scanToken(), .Semicolon, 4, ";");
     try expectTokenValue(sc.scanToken(), .RightBrace, 5, "}");
     try expectTokenValue(sc.scanToken(), .RightBrace, 6, "}");
+    try expectTokenValue(sc.scanToken(), .Eof, 7, "");
 }

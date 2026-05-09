@@ -13,6 +13,10 @@ pub const InterpretResult = enum(u8) {
     RuntimeError,
 };
 
+pub const RuntimeError = error {
+    StackEmpty,
+};
+
 const StackMax: usize = 256;
 
 pub const VM = struct {
@@ -26,6 +30,8 @@ pub const VM = struct {
     objList: ?*value.Obj,
 
     strings: value.StringTable,
+    
+    globals: std.array_hash_map.String(value.Value),
 
     pub fn init(alloc: std.mem.Allocator) !VM {
         return .{
@@ -36,6 +42,7 @@ pub const VM = struct {
             .stack = undefined,
             .objList = undefined,
             .strings = try .init(alloc),
+            .globals = try .init(alloc, &.{}, &.{}),
         };
     }
 
@@ -71,7 +78,8 @@ pub const VM = struct {
         self.stackSize += 1;
     }
 
-    pub fn stackPop(self: *VM) !value.Value {
+    pub fn stackPop(self: *VM) RuntimeError!value.Value {
+        if (self.stackSize == 0) return error.StackEmpty;
         const ret = self.stack[self.stackSize - 1];
         self.stackSize -= 1;
         return ret;
@@ -86,7 +94,9 @@ pub const VM = struct {
         self.stackSize -= n;
     }
 
-    pub fn deinit(_: *VM) void {}
+    pub fn deinit(self: *VM) void {
+        self.globals.deinit(self.alloc);
+    }
 
     pub fn interpret(self: *VM, source: []const u8) !InterpretResult {
         var chunk: inst.Chunk = try .init(self.alloc);
@@ -95,7 +105,8 @@ pub const VM = struct {
         self.strings = try .init(self.alloc);
         defer self.strings.deinit();
 
-        try compiler.compile(self.alloc, source, &chunk, &self.strings);
+        const hadError = try compiler.compile(self.alloc, source, &chunk, &self.strings);
+        if (hadError) return .CompileError;
         if (build_opts.lox_debug) self.strings.pprint();
 
         self.chunk = &chunk;
@@ -106,6 +117,11 @@ pub const VM = struct {
         const res = self.run();
         if (build_opts.lox_debug) self.strings.pprint();
         return res;
+    }
+
+    inline fn take_operand(self: *VM) u8 {
+        self.ip += 1;
+        return self.chunk.code.items.ptr[self.ip];
     }
 
     fn run(self: *VM) !InterpretResult {
@@ -131,8 +147,7 @@ pub const VM = struct {
                     return InterpretResult.Ok;
                 },
                 @intFromEnum(inst.OpCode.Constant) => {
-                    self.ip += 1;
-                    const vLoc: usize = @intCast(codePtr[self.ip]);
+                    const vLoc: usize = @intCast(self.take_operand());
                     const val = self.chunk.constants.items[vLoc];
                     try self.stackPush(val);
                 },
@@ -253,10 +268,39 @@ pub const VM = struct {
                     self.stackDrop(2);
                     try self.stackPush(.{ .Bool = a > b });
                 },
+                @intFromEnum(inst.OpCode.Print) => {
+                    const v = try self.stackPop();
+                    value.printValue(v);
+                    std.debug.print("\n", .{});
+                },
+                @intFromEnum(inst.OpCode.Pop) => {
+                    _ = try self.stackPop();
+                },
+                @intFromEnum(inst.OpCode.DefineGlobal) => {
+                    const globalName = self.take_operand_as_val().Obj.inst.String;
+                    const val = self.stackPeek(0).?;
+                    try self.globals.put(self.alloc, globalName.data, val);
+                    self.stackDrop(1);
+                },
+                @intFromEnum(inst.OpCode.GetGlobal) => {
+                    const name = self.take_operand_as_val().Obj.inst.String;
+                    
+                    if (self.globals.get(name.data)) |val| {
+                        try self.stackPush(val);
+                    } else {
+                        self.runtimeError("Undefined variable: {s}", .{name.data});
+                        return .RuntimeError;
+                    }
+                },
                 else => {},
             }
         }
         return InterpretResult.RuntimeError;
+    }
+
+    fn take_operand_as_val(self: *VM) value.Value {
+        const loc: usize = @intCast(self.take_operand());
+        return self.chunk.constants.items[loc];
     }
 
     fn stackPeek(self: *VM, depth: usize) ?value.Value {

@@ -41,6 +41,14 @@ pub const OpCode = enum(u8) {
     Equal,
     Greater,
     Less,
+    // Print the top value on the stack
+    Print,
+    // Drop the top of the stack
+    Pop,
+    // Define a global variable
+    DefineGlobal,
+    // Read a global value
+    GetGlobal,
 };
 
 pub const InstructionError = error{
@@ -183,6 +191,10 @@ pub const Chunk = struct {
             @intFromEnum(OpCode.Equal) => return simpleInstruction("OP_EQUAL", offset),
             @intFromEnum(OpCode.Less) => return simpleInstruction("OP_LESS", offset),
             @intFromEnum(OpCode.Greater) => return simpleInstruction("OP_GREATER", offset),
+            @intFromEnum(OpCode.Print) => return simpleInstruction("OP_PRINT", offset),
+            @intFromEnum(OpCode.Pop) => return simpleInstruction("OP_POP", offset),
+            @intFromEnum(OpCode.DefineGlobal) => return constantInstruction("OP_DEFINE_GLOBAL", self, offset),
+            @intFromEnum(OpCode.GetGlobal) => return constantInstruction("OP_GET_GLOBAL", self, offset),
             else => {
                 std.debug.print("Unknown opcode: {d}\n", .{inst});
                 return offset + 1;

@@ -46,7 +46,13 @@ fn repl(_: std.mem.Allocator, machine: *vm.VM, io: std.Io) !void {
         if (std.mem.eql(u8, line, "exit")) {
             return;
         }
-        _ = try machine.interpret(line);
+        _ = machine.interpret(line) catch |err| blk: {
+            switch (err) {
+            vm.RuntimeError.StackEmpty => std.debug.print("ERROR: attempt to pop from an empty stack", .{}),
+            else => return err,
+            }
+            break :blk vm.InterpretResult.RuntimeError;
+        };
         std.debug.print("> ", .{});
     }
 }
