@@ -107,15 +107,23 @@ pub const VM = struct {
 
         const hadError = try compiler.compile(self.alloc, source, &chunk, &self.strings);
         if (hadError) return .CompileError;
-        if (build_opts.lox_debug) self.strings.pprint();
+        if (build_opts.lox_debug) {
+            std.debug.print("\x1b[2;37m", .{});
+            self.strings.pprint();
+            std.debug.print("\x1b[0m", .{});
+        }
 
         self.chunk = &chunk;
         self.ip = 0;
         if (build_opts.lox_debug) {
-            std.debug.print("--- RUNNING ---\n", .{});
+            std.debug.print("\x1b[2;37m--- RUNNING ---\n\x1b[0m", .{});
         }
         const res = self.run();
-        if (build_opts.lox_debug) self.strings.pprint();
+        if (build_opts.lox_debug) {
+            std.debug.print("\x1b[2;37m", .{});
+            self.strings.pprint();
+            std.debug.print("\x1b[0m", .{});
+        }
         return res;
     }
 
@@ -129,6 +137,7 @@ pub const VM = struct {
 
         while (self.ip < self.chunk.len()) : (self.ip += 1) {
             if (comptime build_opts.lox_debug) {
+                std.debug.print("\x1b[2;37m", .{});
                 std.debug.print("          ", .{});
                 for (0..self.stackSize) |i| {
                     std.debug.print("[ ", .{});
@@ -137,6 +146,7 @@ pub const VM = struct {
                 }
                 std.debug.print("\n", .{});
                 _ = try self.chunk.disassembleInstruction(self.ip);
+                std.debug.print("\x1b[0m", .{});
             }
             switch (codePtr[self.ip]) {
                 @intFromEnum(inst.OpCode.Return) => {
@@ -287,6 +297,15 @@ pub const VM = struct {
                     
                     if (self.globals.get(name.data)) |val| {
                         try self.stackPush(val);
+                    } else {
+                        self.runtimeError("Undefined variable: {s}", .{name.data});
+                        return .RuntimeError;
+                    }
+                },
+                @intFromEnum(inst.OpCode.SetGlobal) => {
+                    const name = self.take_operand_as_val().Obj.inst.String;
+                    if (self.globals.getEntry(name.data)) |ent| {
+                        ent.value_ptr.* = self.stackPeek(0).?;
                     } else {
                         self.runtimeError("Undefined variable: {s}", .{name.data});
                         return .RuntimeError;

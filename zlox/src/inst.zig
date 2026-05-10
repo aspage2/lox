@@ -45,10 +45,11 @@ pub const OpCode = enum(u8) {
     Print,
     // Drop the top of the stack
     Pop,
-    // Define a global variable
+
+    // Manage global vars
     DefineGlobal,
-    // Read a global value
     GetGlobal,
+    SetGlobal,
 };
 
 pub const InstructionError = error{
@@ -195,6 +196,7 @@ pub const Chunk = struct {
             @intFromEnum(OpCode.Pop) => return simpleInstruction("OP_POP", offset),
             @intFromEnum(OpCode.DefineGlobal) => return constantInstruction("OP_DEFINE_GLOBAL", self, offset),
             @intFromEnum(OpCode.GetGlobal) => return constantInstruction("OP_GET_GLOBAL", self, offset),
+            @intFromEnum(OpCode.SetGlobal) => return constantInstruction("OP_SET_GLOBAL", self, offset),
             else => {
                 std.debug.print("Unknown opcode: {d}\n", .{inst});
                 return offset + 1;

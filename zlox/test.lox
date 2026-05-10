@@ -1,0 +1,6 @@
+
+var breakfast = "Pancakes";
+
+var full = breakfast + " & Eggs";
+
+print full;

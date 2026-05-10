@@ -12,7 +12,13 @@ const inst = @import("inst.zig");
 
 const Parser = @This();
 
-const ParseFn = *const fn (*Parser) anyerror!void;
+// Parser method which consumes tokens and
+// emits data and opcodes. the bool argument is
+// true until a binary or unary expression is encountered.
+// this information is passed forward through the parser
+// to determine whether an equals token `=` should be
+// considered invalid or an assignment operator.
+const ParseFn = *const fn (*Parser, bool) anyerror!void;
 
 const Entry = @Tuple(&.{ TokenType, ?ParseFn, ?ParseFn, Precedence });
 
@@ -266,33 +272,38 @@ pub fn expression(self: *Parser) !void {
     try self.parsePrecedence(.Assignment);
 }
 
-fn number(self: *Parser) !void {
+fn number(self: *Parser, _: bool) !void {
     const val: f32 = try std.fmt.parseFloat(f32, self.previous.data);
     try self.emitConstant(.{ .Number = val });
 }
 
-fn grouping(self: *Parser) !void {
+fn grouping(self: *Parser, _: bool) !void {
     try self.expression();
     self.consume(.RightParen, "Expect ')' after expression");
 }
 
-fn string(self: *Parser) !void {
+fn string(self: *Parser, _: bool) !void {
     const sobj = try self.stringTable.make(self.previous.data);
     const o = try self.alloc.create(value.Obj);
     o.inst.String = sobj;
     try self.emitConstant(.{.Obj = o});
 }
 
-fn variable(self: *Parser) !void {
-    return self.namedVariable(self.previous);
+fn variable(self: *Parser, canParse: bool) !void {
+    return self.namedVariable(self.previous, canParse);
 }
 
-fn namedVariable(self: *Parser, name: Token) !void {
+fn namedVariable(self: *Parser, name: Token, canParse: bool) !void {
     const arg = try self.identifierConstant(name);
-    try self.emitTwo(.GetGlobal, arg);
+    if (canParse and self.match(.Equal)) {
+        try self.expression();
+        try self.emitTwo(.SetGlobal, arg);
+    } else {
+        try self.emitTwo(.GetGlobal, arg);
+    }
 }
 
-fn binary(self: *Parser) !void {
+fn binary(self: *Parser, _: bool) !void {
     const typ: TokenType = self.previous.type;
     const rule = getRule(typ);
     try self.parsePrecedence(rule.precedence.succ().?);
@@ -322,23 +333,29 @@ fn binary(self: *Parser) !void {
 }
 
 fn parsePrecedence(self: *Parser, prec: Precedence) !void {
+    const pi = @intFromEnum(prec);
+    const canAssign = pi < @intFromEnum(Precedence.Assignment);
     self.advance();
     const f = getRule(self.previous.type);
     if (f.prefix) |pf| {
-        try pf(self);
+        try pf(self, canAssign);
     } else {
         self.err("Expect an expression");
         return;
     }
 
-    while (@intFromEnum(prec) <= @intFromEnum(getRule(self.current.type).precedence)) {
+    while (pi <= @intFromEnum(getRule(self.current.type).precedence)) {
         self.advance();
         const ifRule = getRule(self.previous.type).infix.?;
-        try ifRule(self);
+        try ifRule(self, canAssign);
+    }
+    if (canAssign and self.match(.Equal)) {
+        self.err("Invalid assignment target");
+        return;
     }
 }
 
-fn unary(self: *Parser) !void {
+fn unary(self: *Parser, _: bool) !void {
     const typ = self.previous.type;
 
     try self.parsePrecedence(.Unary);
@@ -362,7 +379,7 @@ fn emitConstant(self: *Parser, val: value.Value) !void {
     try self.emitTwo(.Constant, try self.makeConstant(val));
 }
 
-fn literal(self: *Parser) !void {
+fn literal(self: *Parser, _: bool) !void {
     switch (self.previous.type) {
         .Nil => try self.emitOpCode(.Nil),
         .True => try self.emitOpCode(.True),
