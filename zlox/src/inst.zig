@@ -50,6 +50,10 @@ pub const OpCode = enum(u8) {
     DefineGlobal,
     GetGlobal,
     SetGlobal,
+
+    // Manage Local vars
+    GetLocal,
+    SetLocal,
 };
 
 pub const InstructionError = error{
@@ -197,6 +201,8 @@ pub const Chunk = struct {
             @intFromEnum(OpCode.DefineGlobal) => return constantInstruction("OP_DEFINE_GLOBAL", self, offset),
             @intFromEnum(OpCode.GetGlobal) => return constantInstruction("OP_GET_GLOBAL", self, offset),
             @intFromEnum(OpCode.SetGlobal) => return constantInstruction("OP_SET_GLOBAL", self, offset),
+            @intFromEnum(OpCode.GetLocal) => return byteInstruction("OP_GET_LOCAL", self, offset),
+            @intFromEnum(OpCode.SetLocal) => return byteInstruction("OP_SET_LOCAL", self, offset),
             else => {
                 std.debug.print("Unknown opcode: {d}\n", .{inst});
                 return offset + 1;
@@ -215,5 +221,11 @@ fn constantInstruction(name: []const u8, chunk: *const Chunk, offset: usize) usi
     std.debug.print("{s:<16} {d:>4} ", .{ name, valueLoc });
     value.printValue(chunk.constants.items[valueLoc]);
     std.debug.print("\n", .{});
+    return offset + 2;
+}
+
+fn byteInstruction(name: []const u8, chunk: *const Chunk, offset: usize) usize {
+    const val: usize = @intCast(chunk.code.items[offset + 1]);
+    std.debug.print("{s:<16} {d:>4}\n", .{ name, val });
     return offset + 2;
 }

@@ -2,8 +2,7 @@ const std = @import("std");
 
 const inst = @import("inst.zig");
 const value = @import("value.zig");
-
-const compiler = @import("compiler.zig");
+const compile = @import("parser.zig").compile;
 
 const build_opts = @import("build_options");
 
@@ -13,7 +12,7 @@ pub const InterpretResult = enum(u8) {
     RuntimeError,
 };
 
-pub const RuntimeError = error {
+pub const RuntimeError = error{
     StackEmpty,
 };
 
@@ -30,7 +29,7 @@ pub const VM = struct {
     objList: ?*value.Obj,
 
     strings: value.StringTable,
-    
+
     globals: std.array_hash_map.String(value.Value),
 
     pub fn init(alloc: std.mem.Allocator) !VM {
@@ -105,7 +104,7 @@ pub const VM = struct {
         self.strings = try .init(self.alloc);
         defer self.strings.deinit();
 
-        const hadError = try compiler.compile(self.alloc, source, &chunk, &self.strings);
+        const hadError = try compile(self.alloc, source, &chunk, &self.strings);
         if (hadError) return .CompileError;
         if (build_opts.lox_debug) {
             std.debug.print("\x1b[2;37m", .{});
@@ -198,7 +197,9 @@ pub const VM = struct {
                             }
                             self.stackDrop(2);
                             const newData = try std.mem.concat(
-                                self.alloc, u8, &.{ao.inst.String.data, bo.inst.String.data},
+                                self.alloc,
+                                u8,
+                                &.{ ao.inst.String.data, bo.inst.String.data },
                             );
                             defer self.alloc.free(newData);
                             try self.stackPush(.{ .Obj = try self.allocateString(newData) });
@@ -294,7 +295,7 @@ pub const VM = struct {
                 },
                 @intFromEnum(inst.OpCode.GetGlobal) => {
                     const name = self.take_operand_as_val().Obj.inst.String;
-                    
+
                     if (self.globals.get(name.data)) |val| {
                         try self.stackPush(val);
                     } else {
@@ -310,6 +311,14 @@ pub const VM = struct {
                         self.runtimeError("Undefined variable: {s}", .{name.data});
                         return .RuntimeError;
                     }
+                },
+                @intFromEnum(inst.OpCode.SetLocal) => {
+                    const slot = self.take_operand();
+                    self.stack[slot] = self.stackPeek(0).?;
+                },
+                @intFromEnum(inst.OpCode.GetLocal) => {
+                    const slot = self.take_operand();
+                    try self.stackPush(self.stack[slot]);
                 },
                 else => {},
             }

@@ -1,6 +1,12 @@
 
-var breakfast = "Pancakes";
+var x = 3;
+{
+  var a = 3;
 
-var full = breakfast + " & Eggs";
+  {
+    var b = 5;
 
-print full;
+	print b + a + x;
+  }
+
+}

@@ -1,6 +1,5 @@
 const std = @import("std");
 
-const compiler = @import("compiler.zig");
 const Scanner = @import("scanner.zig");
 const Token = Scanner.Token;
 const TokenType = Scanner.TokenType;
@@ -9,6 +8,55 @@ const value = @import("value.zig");
 const build_options = @import("build_options");
 
 const inst = @import("inst.zig");
+
+pub const Compiler = struct {
+    locals: [std.math.maxInt(u8)]Local = undefined,
+    count: usize = 0,
+    scopeDepth: isize = 0,
+
+    pub const Error = error{TooManyLocals};
+
+    pub fn markInitialized(self: *Compiler) void {
+        self.locals[self.count - 1].depth = self.scopeDepth;
+    }
+
+    pub fn beginScope(self: *Compiler) void {
+        self.scopeDepth += 1;
+    }
+
+    pub fn endScope(self: *Compiler) u8 {
+        const currCount = self.count;
+        self.scopeDepth -= 1;
+        while (self.count > 0 and
+            self.locals[self.count - 1].depth > self.scopeDepth) : (self.count -= 1)
+        {}
+
+        return @intCast(currCount - self.count);
+    }
+
+    pub fn addLocal(self: *Compiler, name: Token) Compiler.Error!void {
+        if (self.count == std.math.maxInt(u8))
+            return Compiler.Error.TooManyLocals;
+        const ind = self.count;
+        self.count += 1;
+        self.locals[ind].name = name;
+        self.locals[ind].depth = -1;
+    }
+
+    pub fn resolveLocal(self: *Compiler, name: Token) ?u8 {
+        var i = self.count;
+        while (i > 0) : (i -= 1) {
+            if (std.mem.eql(u8, name.data, self.locals[i - 1].name.data))
+                return @intCast(i - 1);
+        }
+        return null;
+    }
+};
+
+pub const Local = struct {
+    name: Token,
+    depth: isize,
+};
 
 const Parser = @This();
 
@@ -62,9 +110,9 @@ const ents = [_]Entry{
     ruleEntry(.Equal, null, null, .None),
     ruleEntry(.DoubleEqual, null, binary, .Equality),
     ruleEntry(.Greater, null, binary, .Comparison),
-    ruleEntry(.GreaterEqual, null, binary, .Equality),
-    ruleEntry(.Less, null, binary, .Equality),
-    ruleEntry(.LessEqual, null, binary, .Equality),
+    ruleEntry(.GreaterEqual, null, binary, .Comparison),
+    ruleEntry(.Less, null, binary, .Comparison),
+    ruleEntry(.LessEqual, null, binary, .Comparison),
     ruleEntry(.Ident, variable, null, .None),
     ruleEntry(.String, string, null, .None),
     ruleEntry(.Number, number, null, .None),
@@ -99,6 +147,7 @@ fn getRule(op: TokenType) *const ParseRule {
 
 alloc: std.mem.Allocator,
 sc: *Scanner,
+compiler: *Compiler,
 compilingChunk: *Chunk,
 stringTable: *value.StringTable,
 previous: Token = undefined,
@@ -152,12 +201,19 @@ const Precedence = enum(u8) {
     }
 };
 
-pub fn init(alloc: std.mem.Allocator, sc: *Scanner, chunk: *inst.Chunk, tbl: *value.StringTable) Parser {
-    return .{ 
+pub fn init(
+    alloc: std.mem.Allocator,
+    sc: *Scanner,
+    chunk: *inst.Chunk,
+    tbl: *value.StringTable,
+    compiler: *Compiler,
+) Parser {
+    return .{
         .alloc = alloc,
         .sc = sc,
         .compilingChunk = chunk,
         .stringTable = tbl,
+        .compiler = compiler,
     };
 }
 
@@ -204,7 +260,7 @@ pub fn declaration(self: *Parser) !void {
 }
 
 fn varDeclaration(self: *Parser) !void {
-    const global = try self.parseVariable("Expect varnae");
+    const global = try self.parseVariable("Expect varname");
     if (self.match(.Equal)) {
         try self.expression();
     } else {
@@ -214,20 +270,55 @@ fn varDeclaration(self: *Parser) !void {
     try self.defineVariable(global);
 }
 
-fn parseVariable(self: *Parser, comptime errMsg: []const u8) !u8{
+fn parseVariable(self: *Parser, comptime errMsg: []const u8) !u8 {
     self.consume(.Ident, errMsg);
+
+    try self.declareVariable();
+    if (self.compiler.scopeDepth > 0) return 0;
+
     return try self.identifierConstant(self.previous);
 }
 
-fn identifierConstant(self: *Parser, tok: Token) !u8{
+fn identifierConstant(self: *Parser, tok: Token) !u8 {
     const sobj = try self.stringTable.make(tok.data);
     const o = try self.alloc.create(value.Obj);
     o.inst.String = sobj;
-    return try self.makeConstant(.{ .Obj = o});
+    return try self.makeConstant(.{ .Obj = o });
 }
 
 fn defineVariable(self: *Parser, loc: u8) !void {
+    // Local-depth (>0) cases are already defined
+    // at this point, so we can skip
+    if (self.compiler.scopeDepth > 0) {
+        self.compiler.markInitialized();
+        return;
+    }
     try self.emitTwo(.DefineGlobal, loc);
+}
+
+fn declareVariable(self: *Parser) !void {
+    // We handle globals differently than locally-scoped values
+    if (self.compiler.scopeDepth == 0)
+        return;
+    // Detect redefined variables in the same scope
+    var i = self.compiler.count;
+    while (i > 0) : (i -= 1) {
+        const l = self.compiler.locals[i - 1];
+        if (l.depth != -1 and l.depth < self.compiler.scopeDepth) {
+            break;
+        }
+        if (identifiersEqual(self.previous, l.name)) {
+            self.err("Cannot re-define varialbe in the same scope");
+        }
+    }
+    self.compiler.addLocal(self.previous) catch {
+        self.err("Too many locals defined.");
+        return;
+    };
+}
+
+inline fn identifiersEqual(a: Token, b: Token) bool {
+    return std.mem.eql(u8, a.data, b.data);
 }
 
 inline fn consumeSemicolon(self: *Parser) void {
@@ -241,19 +332,33 @@ fn synchronize(self: *Parser) void {
         if (self.previous.type == .Semicolon) return;
 
         switch (self.current.type) {
-        .Class, .Fun, .Var, .For, .If, .While, .Print, .Return => return,
-        else => {},
+            .Class, .Fun, .Var, .For, .If, .While, .Print, .Return => return,
+            else => {},
         }
         self.advance();
     }
 }
 
-pub fn statement(self: *Parser) !void {
+pub fn statement(self: *Parser) anyerror!void {
     if (self.match(.Print)) {
         try self.printStatement();
+    } else if (self.match(.LeftBrace)) {
+        self.compiler.beginScope();
+        try self.block();
+        const numLocals = self.compiler.endScope();
+        for (0..numLocals) |_| {
+            try self.emitOpCode(.Pop);
+        }
     } else {
         try self.expressionStatement();
     }
+}
+
+fn block(self: *Parser) !void {
+    while (!self.check(.RightBrace) and !self.check(.Eof)) {
+        try self.declaration();
+    }
+    self.consume(.RightBrace, "unterminated block");
 }
 
 pub fn printStatement(self: *Parser) !void {
@@ -286,7 +391,7 @@ fn string(self: *Parser, _: bool) !void {
     const sobj = try self.stringTable.make(self.previous.data);
     const o = try self.alloc.create(value.Obj);
     o.inst.String = sobj;
-    try self.emitConstant(.{.Obj = o});
+    try self.emitConstant(.{ .Obj = o });
 }
 
 fn variable(self: *Parser, canParse: bool) !void {
@@ -294,12 +399,23 @@ fn variable(self: *Parser, canParse: bool) !void {
 }
 
 fn namedVariable(self: *Parser, name: Token, canParse: bool) !void {
-    const arg = try self.identifierConstant(name);
+    var getOp: inst.OpCode = undefined;
+    var setOp: inst.OpCode = undefined;
+    var arg: u8 = undefined;
+    if (self.compiler.resolveLocal(name)) |a| {
+        arg = a;
+        getOp = .GetLocal;
+        setOp = .SetLocal;
+    } else {
+        arg = try self.identifierConstant(name);
+        getOp = .GetGlobal;
+        setOp = .SetGlobal;
+    }
     if (canParse and self.match(.Equal)) {
         try self.expression();
-        try self.emitTwo(.SetGlobal, arg);
+        try self.emitTwo(setOp, arg);
     } else {
-        try self.emitTwo(.GetGlobal, arg);
+        try self.emitTwo(getOp, arg);
     }
 }
 
@@ -334,7 +450,7 @@ fn binary(self: *Parser, _: bool) !void {
 
 fn parsePrecedence(self: *Parser, prec: Precedence) !void {
     const pi = @intFromEnum(prec);
-    const canAssign = pi < @intFromEnum(Precedence.Assignment);
+    const canAssign = pi <= @intFromEnum(Precedence.Assignment);
     self.advance();
     const f = getRule(self.previous.type);
     if (f.prefix) |pf| {
@@ -343,7 +459,6 @@ fn parsePrecedence(self: *Parser, prec: Precedence) !void {
         self.err("Expect an expression");
         return;
     }
-
     while (pi <= @intFromEnum(getRule(self.current.type).precedence)) {
         self.advance();
         const ifRule = getRule(self.previous.type).infix.?;
@@ -430,4 +545,24 @@ pub fn end(self: *Parser) !void {
     if (build_options.lox_debug and !self.hadError) {
         try self.currentChunk().disassemble("code");
     }
+}
+
+pub fn compile(
+    alloc: std.mem.Allocator,
+    source: []const u8,
+    chunk: *Chunk,
+    st: *value.StringTable,
+) !bool {
+    var sc: Scanner = .init(source);
+    var comp: Compiler = .{};
+    var parser: Parser = .init(alloc, &sc, chunk, st, &comp);
+
+    parser.advance();
+
+    while (!parser.match(.Eof)) {
+        try parser.declaration();
+    }
+
+    try parser.end();
+    return parser.hadError;
 }

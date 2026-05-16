@@ -1,6 +1,5 @@
 const std = @import("std");
 
-
 pub const ValType = enum {
     Bool,
     Number,
@@ -89,9 +88,10 @@ pub const Obj = struct {
 
     fn equals(self: *Obj, other: *Obj) bool {
         switch (self.inst) {
-        .String => |s| {
-            return s == other.inst.String;
-        } }
+            .String => |s| {
+                return s == other.inst.String;
+            },
+        }
     }
 };
 
@@ -134,7 +134,7 @@ pub const StringTable = struct {
     pub fn pprint(self: *StringTable) void {
         std.debug.print("<----STRING TABLE---->\n", .{});
         for (self.tbl.values()) |v| {
-            std.debug.print("{*} {d:>6} {s}\n", .{v.data.ptr, v.data.len, v.data});
+            std.debug.print("{*} {d:>6} {s}\n", .{ v.data.ptr, v.data.len, v.data });
         }
         std.debug.print("</---STRING TABLE---->\n", .{});
     }
