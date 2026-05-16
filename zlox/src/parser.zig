@@ -13,8 +13,12 @@ pub const Compiler = struct {
     locals: [std.math.maxInt(u8)]Local = undefined,
     count: usize = 0,
     scopeDepth: isize = 0,
+    parser: *Parser = undefined,
 
-    pub const Error = error{TooManyLocals};
+    pub const Error = error{
+        TooManyLocals,
+        SelfReferentialLocal,
+    };
 
     pub fn markInitialized(self: *Compiler) void {
         self.locals[self.count - 1].depth = self.scopeDepth;
@@ -43,11 +47,17 @@ pub const Compiler = struct {
         self.locals[ind].depth = -1;
     }
 
-    pub fn resolveLocal(self: *Compiler, name: Token) ?u8 {
+    pub fn resolveLocal(self: *Compiler, name: Token) Compiler.Error!?u8 {
         var i = self.count;
         while (i > 0) : (i -= 1) {
-            if (std.mem.eql(u8, name.data, self.locals[i - 1].name.data))
-                return @intCast(i - 1);
+            const pos = i - 1;
+            const local = self.locals[pos];
+            if (std.mem.eql(u8, name.data, local.name.data)) {
+                // capture var a = a;
+                if (local.depth == -1)
+                    return Compiler.Error.SelfReferentialLocal;
+                return @intCast(pos);
+            }
         }
         return null;
     }
@@ -402,14 +412,19 @@ fn namedVariable(self: *Parser, name: Token, canParse: bool) !void {
     var getOp: inst.OpCode = undefined;
     var setOp: inst.OpCode = undefined;
     var arg: u8 = undefined;
-    if (self.compiler.resolveLocal(name)) |a| {
-        arg = a;
-        getOp = .GetLocal;
-        setOp = .SetLocal;
-    } else {
-        arg = try self.identifierConstant(name);
-        getOp = .GetGlobal;
-        setOp = .SetGlobal;
+    if (self.compiler.resolveLocal(name)) |maybe_a| {
+        if (maybe_a) |a| {
+            arg = a;
+            getOp = .GetLocal;
+            setOp = .SetLocal;
+        } else {
+            arg = try self.identifierConstant(name);
+            getOp = .GetGlobal;
+            setOp = .SetGlobal;
+        }
+    } else |e| switch (e) {
+        Compiler.Error.SelfReferentialLocal => self.err("can't self-reference a local in its own declaration."),
+        else => unreachable,
     }
     if (canParse and self.match(.Equal)) {
         try self.expression();

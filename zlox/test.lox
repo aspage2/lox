@@ -1,12 +1,6 @@
 
-var x = 3;
 {
-  var a = 3;
+  var a = a;
 
-  {
-    var b = 5;
-
-	print b + a + x;
-  }
-
+  print 3 + ;
 }
