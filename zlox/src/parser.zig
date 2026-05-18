@@ -356,6 +356,8 @@ pub fn statement(self: *Parser) anyerror!void {
         try self.ifStatement();
     } else if (self.match(.While)) {
         try self.whileStatement();
+    } else if (self.match(.For)) {
+        try self.forStatement();
     } else if (self.match(.LeftBrace)) {
         self.compiler.beginScope();
         try self.block();
@@ -365,6 +367,52 @@ pub fn statement(self: *Parser) anyerror!void {
         }
     } else {
         try self.expressionStatement();
+    }
+}
+
+fn forStatement(self: *Parser) !void {
+    // Scope out any loop parameters
+    self.compiler.beginScope();
+    self.consume(.LeftParen, "For header must be enclosed with ( )");
+    
+    // Parse initializer
+    if (self.match(.Semicolon)) {}
+    else if (self.match(.Var)) {
+        try self.varDeclaration();
+    } else {
+        try self.expressionStatement();
+    }
+    var loopStart = self.currentChunk().len();
+    var exitJump: ?usize = null;
+    if (!self.match(.Semicolon)) {
+        try self.expression();
+        self.consume(.Semicolon, "expect semicolon after conditional in for loop");
+        exitJump = try self.emitJump(.conditional);
+        try self.emitOpCode(.Pop);
+    }
+
+    if (!self.match(.RightParen)) {
+        const bodyJump = try self.emitJump(.always);
+        const incrementStatement = self.currentChunk().len();
+        try self.expression();
+        try self.emitOpCode(.Pop);
+
+        self.consume(.RightParen, "expect ')' at close of for condition");
+
+        try self.emitLoop(@intCast(loopStart));
+        loopStart = incrementStatement;
+        self.patchJump(bodyJump);
+    }
+
+    try self.statement();
+    try self.emitLoop(@intCast(loopStart));
+    if (exitJump) |loc| {
+        self.patchJump(loc);
+        try self.emitOpCode(.Pop);
+    }
+    const numLocals = self.compiler.endScope();
+    for (0..numLocals) |_| {
+        try self.emitOpCode(.Pop);
     }
 }
 
@@ -644,12 +692,10 @@ fn emitByte(self: *Parser, b: u8) !void {
 }
 
 fn emitOpCode(self: *Parser, code: inst.OpCode) !void {
-    std.debug.print("Emit opcode {any} line {d}\n", .{code, self.previous.line});
     try self.currentChunk().putOpCode(code, @intCast(self.previous.line));
 }
 
 fn emitTwo(self: *Parser, code: inst.OpCode, b: u8) !void {
-    std.debug.print("Emit opcode {any} value {d} line {d}\n", .{code, b, self.previous.line});
     var c = self.currentChunk();
     try c.putOpCode(code, @intCast(self.previous.line));
     try c.put(b, @intCast(self.previous.line));
