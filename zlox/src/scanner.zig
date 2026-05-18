@@ -9,7 +9,7 @@ const Scanner = @This();
 pub const Token = struct {
     type: TokenType,
     data: []const u8,
-    line: usize,
+    line: u32,
 
     pub fn inferIdentifierType(self: *Token) void {
         switch (self.data[0]) {
@@ -104,7 +104,7 @@ pub const TokenType = enum(u8) {
 source: []const u8,
 start: usize,
 pos: usize,
-line: usize,
+line: u32,
 
 pub fn init(source: []const u8) Scanner {
     return .{

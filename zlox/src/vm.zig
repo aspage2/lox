@@ -126,9 +126,29 @@ pub const VM = struct {
         return res;
     }
 
-    inline fn take_operand(self: *VM) u8 {
-        self.ip += 1;
-        return self.chunk.code.items.ptr[self.ip];
+    inline fn take_operand(self: *VM, comptime T: type) T {
+        switch (T) {
+            u8 => {
+                self.ip += 1;
+                return self.chunk.code.items.ptr[self.ip];
+            },
+            u16 => {
+                self.ip += 2;
+                const x = self.chunk.code.items[self.ip-1..self.ip+1];
+                return std.mem.readInt(u16, @ptrCast(x), .little);
+            },
+            value.Value => {
+                self.ip += 1;
+                const idx = self.chunk.code.items.ptr[self.ip];
+                return self.chunk.constants.items[idx];
+            },
+            *value.StringObj => {
+                self.ip += 1;
+                const idx = self.chunk.code.items.ptr[self.ip];
+                return self.chunk.constants.items[idx].Obj.inst.String;
+            },
+            else => @panic("unsupported type"),
+        }
     }
 
     fn run(self: *VM) !InterpretResult {
@@ -156,7 +176,7 @@ pub const VM = struct {
                     return InterpretResult.Ok;
                 },
                 @intFromEnum(inst.OpCode.Constant) => {
-                    const vLoc: usize = @intCast(self.take_operand());
+                    const vLoc: usize = @intCast(self.take_operand(u8));
                     const val = self.chunk.constants.items[vLoc];
                     try self.stackPush(val);
                 },
@@ -288,13 +308,13 @@ pub const VM = struct {
                     _ = try self.stackPop();
                 },
                 @intFromEnum(inst.OpCode.DefineGlobal) => {
-                    const globalName = self.take_operand_as_val().Obj.inst.String;
+                    const globalName = self.take_operand(*value.StringObj);
                     const val = self.stackPeek(0).?;
                     try self.globals.put(self.alloc, globalName.data, val);
                     self.stackDrop(1);
                 },
                 @intFromEnum(inst.OpCode.GetGlobal) => {
-                    const name = self.take_operand_as_val().Obj.inst.String;
+                    const name = self.take_operand(*value.StringObj);
 
                     if (self.globals.get(name.data)) |val| {
                         try self.stackPush(val);
@@ -304,7 +324,7 @@ pub const VM = struct {
                     }
                 },
                 @intFromEnum(inst.OpCode.SetGlobal) => {
-                    const name = self.take_operand_as_val().Obj.inst.String;
+                    const name = self.take_operand(*value.StringObj);
                     if (self.globals.getEntry(name.data)) |ent| {
                         ent.value_ptr.* = self.stackPeek(0).?;
                     } else {
@@ -313,22 +333,32 @@ pub const VM = struct {
                     }
                 },
                 @intFromEnum(inst.OpCode.SetLocal) => {
-                    const slot = self.take_operand();
+                    const slot = self.take_operand(u8);
                     self.stack[slot] = self.stackPeek(0).?;
                 },
                 @intFromEnum(inst.OpCode.GetLocal) => {
-                    const slot = self.take_operand();
+                    const slot = self.take_operand(u8);
                     try self.stackPush(self.stack[slot]);
+                },
+                @intFromEnum(inst.OpCode.JumpIfFalse) => {
+                    const offset = self.take_operand(u16);
+                    const top = self.stackPeek(0).?;
+                    if (top.isFalsey()) {
+                        self.ip += offset;
+                    }
+                },
+                @intFromEnum(inst.OpCode.Jump) => {
+                    const offset = self.take_operand(u16);
+                    self.ip += offset;
+                },
+                @intFromEnum(inst.OpCode.Loop) => {
+                    const offset = self.take_operand(u16);
+                    self.ip -= offset;
                 },
                 else => {},
             }
         }
         return InterpretResult.RuntimeError;
-    }
-
-    fn take_operand_as_val(self: *VM) value.Value {
-        const loc: usize = @intCast(self.take_operand());
-        return self.chunk.constants.items[loc];
     }
 
     fn stackPeek(self: *VM, depth: usize) ?value.Value {

@@ -126,7 +126,7 @@ const ents = [_]Entry{
     ruleEntry(.Ident, variable, null, .None),
     ruleEntry(.String, string, null, .None),
     ruleEntry(.Number, number, null, .None),
-    ruleEntry(.And, null, null, .None),
+    ruleEntry(.And, null, and_, .And),
     ruleEntry(.Class, null, null, .None),
     ruleEntry(.Else, null, null, .None),
     ruleEntry(.False, literal, null, .None),
@@ -134,7 +134,7 @@ const ents = [_]Entry{
     ruleEntry(.Fun, null, null, .None),
     ruleEntry(.If, null, null, .None),
     ruleEntry(.Nil, literal, null, .None),
-    ruleEntry(.Or, null, null, .None),
+    ruleEntry(.Or, null, or_, .Or),
     ruleEntry(.Print, null, null, .None),
     ruleEntry(.Return, null, null, .None),
     ruleEntry(.Super, null, null, .None),
@@ -352,6 +352,10 @@ fn synchronize(self: *Parser) void {
 pub fn statement(self: *Parser) anyerror!void {
     if (self.match(.Print)) {
         try self.printStatement();
+    } else if (self.match(.If)) {
+        try self.ifStatement();
+    } else if (self.match(.While)) {
+        try self.whileStatement();
     } else if (self.match(.LeftBrace)) {
         self.compiler.beginScope();
         try self.block();
@@ -362,6 +366,80 @@ pub fn statement(self: *Parser) anyerror!void {
     } else {
         try self.expressionStatement();
     }
+}
+
+fn whileStatement(self: *Parser) !void {
+    const loopStart = self.currentChunk().len();
+    self.consume(.LeftParen, "the while condition must be contained by ( )");
+    try self.expression();
+    self.consume(.RightParen, "While loop condition not closed with `)`");
+
+    const exitJump = try self.emitJump(.conditional);
+    try self.emitOpCode(.Pop);
+    try self.statement();
+    try self.emitLoop(@intCast(loopStart));
+
+    self.patchJump(exitJump);
+    try self.emitOpCode(.Pop);
+}
+
+fn ifStatement(self: *Parser) !void {
+    self.consume(.LeftParen, "if condition must be contained by ( )");
+    try self.expression();
+    self.consume(.RightParen, "no closing ')'");
+
+    const jumpThen = try self.emitJump(.conditional);
+    // The POP opcode is necessary because the jump
+    // command doesn't pop the conditional result.
+    try self.emitOpCode(.Pop);
+    try self.statement();
+
+    const elseJump = try self.emitJump(.always);
+
+    self.patchJump(jumpThen);
+    // We must put the POP opcode here as well 
+    // in the case that we DID jump.
+    try self.emitOpCode(.Pop);
+
+    if (self.match(.Else)) try self.statement();
+    self.patchJump(elseJump);
+}
+
+/// Insert a JMP operation, which is one of the jump opcodes
+/// plus a short representing the jump offset. Returns the
+/// index in the code block of the short operand for patching
+/// later.
+fn emitJump(self: *Parser, comptime when: enum { conditional, always }) !usize {
+    try self.emitOpCode(switch (when) {
+        .conditional => .JumpIfFalse,
+        .always => .Jump,
+    });
+    try self.emitByte(0xff);
+    try self.emitByte(0xff);
+    return self.currentChunk().len() - 2;
+}
+
+fn emitLoop(self: *Parser, loopStart: u16) !void {
+    try self.emitOpCode(.Loop);
+
+    const offset = self.currentChunk().len() - loopStart + 2;
+    if (offset > std.math.maxInt(u16))
+        self.err("Loop body too large");
+    try self.emitByte(0);
+    try self.emitByte(0);
+    const ip = self.currentChunk().len();
+    std.mem.writeInt(u16, @ptrCast(self.currentChunk().code.items[ip-2..ip]), @intCast(offset), .little);
+}
+
+/// Patches the current chunk pointer to the provided index.
+fn patchJump(self: *Parser, offset: usize) void {
+    var chunk = self.currentChunk();
+    const jump = chunk.len() - offset - 2;
+    if (jump > std.math.maxInt(u16))
+        self.err("Too much code to jump over");
+    std.mem.writeInt(
+        u16, @ptrCast(chunk.code.items[offset..offset + 2]), @intCast(jump), .little,
+    );
 }
 
 fn block(self: *Parser) !void {
@@ -509,6 +587,26 @@ fn emitConstant(self: *Parser, val: value.Value) !void {
     try self.emitTwo(.Constant, try self.makeConstant(val));
 }
 
+fn and_(self: *Parser, _: bool) !void {
+    const jumpInd = try self.emitJump(.conditional);
+    try self.emitOpCode(.Pop);
+    try self.parsePrecedence(.And);
+    self.patchJump(jumpInd);
+}
+
+fn or_(self: *Parser, _: bool) !void {
+    try self.emitOpCode(.Not);
+
+    const jumpInd = try self.emitJump(.conditional);
+    try self.emitOpCode(.Pop);
+
+    try self.parsePrecedence(.Or);
+    try self.emitOpCode(.Not);
+
+    self.patchJump(jumpInd);
+    try self.emitOpCode(.Not);
+}
+
 fn literal(self: *Parser, _: bool) !void {
     switch (self.previous.type) {
         .Nil => try self.emitOpCode(.Nil),
@@ -546,10 +644,12 @@ fn emitByte(self: *Parser, b: u8) !void {
 }
 
 fn emitOpCode(self: *Parser, code: inst.OpCode) !void {
+    std.debug.print("Emit opcode {any} line {d}\n", .{code, self.previous.line});
     try self.currentChunk().putOpCode(code, @intCast(self.previous.line));
 }
 
 fn emitTwo(self: *Parser, code: inst.OpCode, b: u8) !void {
+    std.debug.print("Emit opcode {any} value {d} line {d}\n", .{code, b, self.previous.line});
     var c = self.currentChunk();
     try c.putOpCode(code, @intCast(self.previous.line));
     try c.put(b, @intCast(self.previous.line));

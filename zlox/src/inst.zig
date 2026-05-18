@@ -54,6 +54,11 @@ pub const OpCode = enum(u8) {
     // Manage Local vars
     GetLocal,
     SetLocal,
+
+    // Jumps
+    Jump,
+    JumpIfFalse,
+    Loop,
 };
 
 pub const InstructionError = error{
@@ -121,7 +126,7 @@ pub const Chunk = struct {
         }
         if (!self.currentLineHasRLE) {
             self.currentLineHasRLE = true;
-            self.lines.items[self.lines.items.len - 1] |= 1 << 31;
+            self.lines.items[linesTop] |= 1 << 31;
             return self.lines.append(self.alloc, 1);
         }
         self.lines.items[linesTop + 1] += 1;
@@ -145,7 +150,7 @@ pub const Chunk = struct {
             }
 
             // We contain the target
-            if (idx > codeIdx)
+            if (idx >= codeIdx)
                 return l & 0x7fffffff;
         }
         return InstructionError.OutOfBounds;
@@ -203,6 +208,9 @@ pub const Chunk = struct {
             @intFromEnum(OpCode.SetGlobal) => return constantInstruction("OP_SET_GLOBAL", self, offset),
             @intFromEnum(OpCode.GetLocal) => return byteInstruction("OP_GET_LOCAL", self, offset),
             @intFromEnum(OpCode.SetLocal) => return byteInstruction("OP_SET_LOCAL", self, offset),
+            @intFromEnum(OpCode.Jump) => return jumpInstruction("OP_JUMP", .forward, self, offset),
+            @intFromEnum(OpCode.JumpIfFalse) => return jumpInstruction("OP_JUMP_IF_FALSE", .forward, self, offset),
+            @intFromEnum(OpCode.Loop) => return jumpInstruction("OP_LOOP", .backward, self, offset),
             else => {
                 std.debug.print("Unknown opcode: {d}\n", .{inst});
                 return offset + 1;
@@ -228,4 +236,14 @@ fn byteInstruction(name: []const u8, chunk: *const Chunk, offset: usize) usize {
     const val: usize = @intCast(chunk.code.items[offset + 1]);
     std.debug.print("{s:<16} {d:>4}\n", .{ name, val });
     return offset + 2;
+}
+
+fn jumpInstruction(name: []const u8, dir: enum {forward, backward}, chunk: *const Chunk, offset: usize) usize {
+    const jump = std.mem.readInt(u16, @ptrCast(chunk.code.items[offset+1..offset+3]), .little);
+    const newOffset = switch (dir) {
+        .forward => offset + 3 + jump,
+        .backward => offset + 3 - jump,
+    };
+    std.debug.print("{s:<16} {d:>4} -> {d}\n", .{name, offset, newOffset});
+    return offset + 3;
 }

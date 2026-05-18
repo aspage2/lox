@@ -1,0 +1,42 @@
+{
+  "$schema": "https://tree-sitter.github.io/tree-sitter/assets/schemas/config.schema.json",
+  "grammars": [
+    {
+      "name": "lox",
+      "camelcase": "Lox",
+      "title": "Lox",
+      "scope": "source.lox",
+      "file-types": [
+        "lox"
+      ],
+      "injection-regex": "^lox$",
+      "class-name": "TreeSitterLox"
+    }
+  ],
+  "metadata": {
+    "version": "0.1.0",
+    "license": "MIT",
+    "description": "Parser for the lox language",
+    "authors": [
+      {
+        "name": "Alex",
+        "email": "hi",
+        "url": ""
+      }
+    ],
+    "links": {
+      "repository": "https://github.com/tree-sitter/tree-sitter-lox",
+      "funding": ""
+    }
+  },
+  "bindings": {
+    "c": true,
+    "go": true,
+    "java": false,
+    "node": true,
+    "python": true,
+    "rust": true,
+    "swift": true,
+    "zig": false
+  }
+}
