@@ -238,12 +238,12 @@ fn byteInstruction(name: []const u8, chunk: *const Chunk, offset: usize) usize {
     return offset + 2;
 }
 
-fn jumpInstruction(name: []const u8, dir: enum {forward, backward}, chunk: *const Chunk, offset: usize) usize {
-    const jump = std.mem.readInt(u16, @ptrCast(chunk.code.items[offset+1..offset+3]), .little);
+fn jumpInstruction(name: []const u8, dir: enum { forward, backward }, chunk: *const Chunk, offset: usize) usize {
+    const jump = std.mem.readInt(u16, @ptrCast(chunk.code.items[offset + 1 .. offset + 3]), .little);
     const newOffset = switch (dir) {
         .forward => offset + 3 + jump,
         .backward => offset + 3 - jump,
     };
-    std.debug.print("{s:<16} {d:>4} -> {d}\n", .{name, offset, newOffset});
+    std.debug.print("{s:<16} {d:>4} -> {d}\n", .{ name, offset, newOffset });
     return offset + 3;
 }

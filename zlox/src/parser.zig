@@ -1,5 +1,6 @@
 const std = @import("std");
 
+const Compiler = @import("compiler.zig");
 const Scanner = @import("scanner.zig");
 const Token = Scanner.Token;
 const TokenType = Scanner.TokenType;
@@ -8,65 +9,6 @@ const value = @import("value.zig");
 const build_options = @import("build_options");
 
 const inst = @import("inst.zig");
-
-pub const Compiler = struct {
-    locals: [std.math.maxInt(u8)]Local = undefined,
-    count: usize = 0,
-    scopeDepth: isize = 0,
-    parser: *Parser = undefined,
-
-    pub const Error = error{
-        TooManyLocals,
-        SelfReferentialLocal,
-    };
-
-    pub fn markInitialized(self: *Compiler) void {
-        self.locals[self.count - 1].depth = self.scopeDepth;
-    }
-
-    pub fn beginScope(self: *Compiler) void {
-        self.scopeDepth += 1;
-    }
-
-    pub fn endScope(self: *Compiler) u8 {
-        const currCount = self.count;
-        self.scopeDepth -= 1;
-        while (self.count > 0 and
-            self.locals[self.count - 1].depth > self.scopeDepth) : (self.count -= 1)
-        {}
-
-        return @intCast(currCount - self.count);
-    }
-
-    pub fn addLocal(self: *Compiler, name: Token) Compiler.Error!void {
-        if (self.count == std.math.maxInt(u8))
-            return Compiler.Error.TooManyLocals;
-        const ind = self.count;
-        self.count += 1;
-        self.locals[ind].name = name;
-        self.locals[ind].depth = -1;
-    }
-
-    pub fn resolveLocal(self: *Compiler, name: Token) Compiler.Error!?u8 {
-        var i = self.count;
-        while (i > 0) : (i -= 1) {
-            const pos = i - 1;
-            const local = self.locals[pos];
-            if (std.mem.eql(u8, name.data, local.name.data)) {
-                // capture var a = a;
-                if (local.depth == -1)
-                    return Compiler.Error.SelfReferentialLocal;
-                return @intCast(pos);
-            }
-        }
-        return null;
-    }
-};
-
-pub const Local = struct {
-    name: Token,
-    depth: isize,
-};
 
 const Parser = @This();
 
@@ -283,7 +225,7 @@ fn varDeclaration(self: *Parser) !void {
 fn parseVariable(self: *Parser, comptime errMsg: []const u8) !u8 {
     self.consume(.Ident, errMsg);
 
-    try self.declareVariable();
+    self.declareVariable();
     if (self.compiler.scopeDepth > 0) return 0;
 
     return try self.identifierConstant(self.previous);
@@ -306,24 +248,22 @@ fn defineVariable(self: *Parser, loc: u8) !void {
     try self.emitTwo(.DefineGlobal, loc);
 }
 
-fn declareVariable(self: *Parser) !void {
+fn declareVariable(self: *Parser) void {
     // We handle globals differently than locally-scoped values
     if (self.compiler.scopeDepth == 0)
         return;
     // Detect redefined variables in the same scope
-    var i = self.compiler.count;
+    var i = self.compiler.locals.items.len;
     while (i > 0) : (i -= 1) {
-        const l = self.compiler.locals[i - 1];
-        if (l.depth != -1 and l.depth < self.compiler.scopeDepth) {
-            break;
-        }
+        const l = self.compiler.locals.items[i - 1];
+        const done = if (l.depth) |d| d < self.compiler.scopeDepth else true;
+        if (done) break;
         if (identifiersEqual(self.previous, l.name)) {
             self.err("Cannot re-define varialbe in the same scope");
         }
     }
     self.compiler.addLocal(self.previous) catch {
-        self.err("Too many locals defined.");
-        return;
+        self.err("too many locals");
     };
 }
 
@@ -374,10 +314,9 @@ fn forStatement(self: *Parser) !void {
     // Scope out any loop parameters
     self.compiler.beginScope();
     self.consume(.LeftParen, "For header must be enclosed with ( )");
-    
+
     // Parse initializer
-    if (self.match(.Semicolon)) {}
-    else if (self.match(.Var)) {
+    if (self.match(.Semicolon)) {} else if (self.match(.Var)) {
         try self.varDeclaration();
     } else {
         try self.expressionStatement();
@@ -445,7 +384,7 @@ fn ifStatement(self: *Parser) !void {
     const elseJump = try self.emitJump(.always);
 
     self.patchJump(jumpThen);
-    // We must put the POP opcode here as well 
+    // We must put the POP opcode here as well
     // in the case that we DID jump.
     try self.emitOpCode(.Pop);
 
@@ -476,7 +415,7 @@ fn emitLoop(self: *Parser, loopStart: u16) !void {
     try self.emitByte(0);
     try self.emitByte(0);
     const ip = self.currentChunk().len();
-    std.mem.writeInt(u16, @ptrCast(self.currentChunk().code.items[ip-2..ip]), @intCast(offset), .little);
+    std.mem.writeInt(u16, @ptrCast(self.currentChunk().code.items[ip - 2 .. ip]), @intCast(offset), .little);
 }
 
 /// Patches the current chunk pointer to the provided index.
@@ -486,7 +425,10 @@ fn patchJump(self: *Parser, offset: usize) void {
     if (jump > std.math.maxInt(u16))
         self.err("Too much code to jump over");
     std.mem.writeInt(
-        u16, @ptrCast(chunk.code.items[offset..offset + 2]), @intCast(jump), .little,
+        u16,
+        @ptrCast(chunk.code.items[offset .. offset + 2]),
+        @intCast(jump),
+        .little,
     );
 }
 
@@ -548,9 +490,9 @@ fn namedVariable(self: *Parser, name: Token, canParse: bool) !void {
             getOp = .GetGlobal;
             setOp = .SetGlobal;
         }
-    } else |e| switch (e) {
-        Compiler.Error.SelfReferentialLocal => self.err("can't self-reference a local in its own declaration."),
-        else => unreachable,
+    } else |_| {
+        self.err("Attempt to define a variable in terms of itself");
+        return;
     }
     if (canParse and self.match(.Equal)) {
         try self.expression();
@@ -715,7 +657,7 @@ pub fn compile(
     st: *value.StringTable,
 ) !bool {
     var sc: Scanner = .init(source);
-    var comp: Compiler = .{};
+    var comp: Compiler = .init();
     var parser: Parser = .init(alloc, &sc, chunk, st, &comp);
 
     parser.advance();
