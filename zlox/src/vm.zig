@@ -134,7 +134,7 @@ pub const VM = struct {
             },
             u16 => {
                 self.ip += 2;
-                const x = self.chunk.code.items[self.ip-1..self.ip+1];
+                const x = self.chunk.code.items[self.ip - 1 .. self.ip + 1];
                 return std.mem.readInt(u16, @ptrCast(x), .little);
             },
             value.Value => {
