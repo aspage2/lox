@@ -1,3 +1,4 @@
+const inst = @import("inst.zig");
 const std = @import("std");
 
 pub const ValType = enum {
@@ -68,6 +69,7 @@ pub fn printValue(val: Value) void {
 pub fn printObject(obj: *const Obj) void {
     switch (obj.inst) {
         .String => |s| std.debug.print("\"{s}\"", .{s.data}),
+        .Func => |f| f.print(),
     }
 }
 
@@ -75,10 +77,12 @@ pub fn printObject(obj: *const Obj) void {
 
 pub const ObjType = enum(u8) {
     String,
+    Func,
 };
 
 pub const SpecificObj = union(ObjType) {
     String: *StringObj,
+    Func: *FuncObj,
 };
 
 pub const Obj = struct {
@@ -91,6 +95,7 @@ pub const Obj = struct {
             .String => |s| {
                 return s == other.inst.String;
             },
+            .Func => return false,
         }
     }
 };
@@ -137,5 +142,34 @@ pub const StringTable = struct {
             std.debug.print("{*} {d:>6} {s}\n", .{ v.data.ptr, v.data.len, v.data });
         }
         std.debug.print("</---STRING TABLE---->\n", .{});
+    }
+};
+
+pub const FuncObj = struct {
+    arity: u8,
+    chunk: inst.Chunk,
+    name: ?[]u8,
+
+    pub fn sentinelFunction(alloc: std.mem.Allocator) !*FuncObj {
+        return FuncObj.init(alloc, null, 0);
+    }
+
+    pub fn init(alloc: std.mem.Allocator, name: ?*StringObj, arity: u8) !*FuncObj {
+        const ret = try alloc.create(FuncObj);
+        ret.arity = arity;
+        ret.name = name;
+        ret.chunk = try .init(alloc);
+    }
+
+    pub fn deinit(self: *FuncObj) void {
+        self.chunk.deinit();
+    }
+
+    fn print(self: *FuncObj) void {
+        if (self.name) |n| {
+            std.debug.print("<func {s}>", .{n});
+        } else {
+            std.debug.print("<script>", .{});
+        }
     }
 };

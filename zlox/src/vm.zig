@@ -64,9 +64,13 @@ pub const VM = struct {
             maybeO = obj.next;
             switch (obj.inst) {
                 .String => |s| {
-                    self.alloc.free(s.data);
+                    s.deinit(self.alloc);
                     self.alloc.destroy(s);
                 },
+                .Func => |f| {
+                    f.deinit();
+                    self.alloc.free(f);
+                }
             }
             self.alloc.destroy(obj);
         }

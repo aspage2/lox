@@ -644,7 +644,7 @@ fn emitTwo(self: *Parser, code: inst.OpCode, b: u8) !void {
 }
 
 pub fn end(self: *Parser) !void {
-    // try self.emitOpCode(.Return);
+    //try self.emitOpCode(.Return);
     if (build_options.lox_debug and !self.hadError) {
         try self.currentChunk().disassemble("code");
     }
