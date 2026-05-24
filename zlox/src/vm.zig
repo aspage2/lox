@@ -146,7 +146,7 @@ pub const VM = struct {
                 const idx = self.chunk.code.items.ptr[self.ip];
                 return self.chunk.constants.items[idx];
             },
-            *value.StringObj => {
+            value.StringObj => {
                 self.ip += 1;
                 const idx = self.chunk.code.items.ptr[self.ip];
                 return self.chunk.constants.items[idx].Obj.inst.String;
@@ -223,7 +223,7 @@ pub const VM = struct {
                             const newData = try std.mem.concat(
                                 self.alloc,
                                 u8,
-                                &.{ ao.inst.String.data, bo.inst.String.data },
+                                &.{ ao.inst.String, bo.inst.String },
                             );
                             defer self.alloc.free(newData);
                             try self.stackPush(.{ .Obj = try self.allocateString(newData) });
@@ -312,27 +312,27 @@ pub const VM = struct {
                     _ = try self.stackPop();
                 },
                 @intFromEnum(inst.OpCode.DefineGlobal) => {
-                    const globalName = self.take_operand(*value.StringObj);
+                    const globalName = self.take_operand(value.StringObj);
                     const val = self.stackPeek(0).?;
-                    try self.globals.put(self.alloc, globalName.data, val);
+                    try self.globals.put(self.alloc, globalName, val);
                     self.stackDrop(1);
                 },
                 @intFromEnum(inst.OpCode.GetGlobal) => {
-                    const name = self.take_operand(*value.StringObj);
+                    const name = self.take_operand(value.StringObj);
 
-                    if (self.globals.get(name.data)) |val| {
+                    if (self.globals.get(name)) |val| {
                         try self.stackPush(val);
                     } else {
-                        self.runtimeError("Undefined variable: {s}", .{name.data});
+                        self.runtimeError("Undefined variable: {s}", .{name});
                         return .RuntimeError;
                     }
                 },
                 @intFromEnum(inst.OpCode.SetGlobal) => {
-                    const name = self.take_operand(*value.StringObj);
-                    if (self.globals.getEntry(name.data)) |ent| {
+                    const name = self.take_operand(value.StringObj);
+                    if (self.globals.getEntry(name)) |ent| {
                         ent.value_ptr.* = self.stackPeek(0).?;
                     } else {
-                        self.runtimeError("Undefined variable: {s}", .{name.data});
+                        self.runtimeError("Undefined variable: {s}", .{name});
                         return .RuntimeError;
                     }
                 },

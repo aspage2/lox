@@ -234,7 +234,7 @@ fn parseVariable(self: *Parser, comptime errMsg: []const u8) !u8 {
 fn identifierConstant(self: *Parser, tok: Token) !u8 {
     const sobj = try self.stringTable.make(tok.data);
     const o = try self.alloc.create(value.Obj);
-    o.inst.String = sobj;
+    o.inst = .{ .String = sobj };
     return try self.makeConstant(.{ .Obj = o });
 }
 
@@ -468,7 +468,7 @@ fn grouping(self: *Parser, _: bool) !void {
 fn string(self: *Parser, _: bool) !void {
     const sobj = try self.stringTable.make(self.previous.data);
     const o = try self.alloc.create(value.Obj);
-    o.inst.String = sobj;
+    o.inst = .{.String = sobj};
     try self.emitConstant(.{ .Obj = o });
 }
 
