@@ -100,7 +100,6 @@ fn getRule(op: TokenType) *const ParseRule {
 alloc: std.mem.Allocator,
 sc: *Scanner,
 compiler: *Compiler,
-compilingChunk: *Chunk,
 stringTable: *value.StringTable,
 previous: Token = undefined,
 current: Token = undefined,
@@ -156,14 +155,12 @@ const Precedence = enum(u8) {
 pub fn init(
     alloc: std.mem.Allocator,
     sc: *Scanner,
-    chunk: *inst.Chunk,
     tbl: *value.StringTable,
     compiler: *Compiler,
 ) Parser {
     return .{
         .alloc = alloc,
         .sc = sc,
-        .compilingChunk = chunk,
         .stringTable = tbl,
         .compiler = compiler,
     };
@@ -626,7 +623,7 @@ pub fn match(self: *Parser, typ: TokenType) bool {
 }
 
 fn currentChunk(self: *Parser) *inst.Chunk {
-    return self.compilingChunk;
+    return &self.compiler.function.chunk;
 }
 
 fn emitByte(self: *Parser, b: u8) !void {
@@ -643,22 +640,24 @@ fn emitTwo(self: *Parser, code: inst.OpCode, b: u8) !void {
     try c.put(b, @intCast(self.previous.line));
 }
 
-pub fn end(self: *Parser) !void {
-    //try self.emitOpCode(.Return);
+pub fn end(self: *Parser) !*value.FuncObj {
+    // try self.emitOpCode(.Return);
+    
+    const f = self.compiler.function;
     if (build_options.lox_debug and !self.hadError) {
-        try self.currentChunk().disassemble("code");
+        try self.currentChunk().disassemble(f.name orelse "<script>");
     }
+    return f;
 }
 
 pub fn compile(
     alloc: std.mem.Allocator,
     source: []const u8,
-    chunk: *Chunk,
     st: *value.StringTable,
-) !bool {
+) !?*value.FuncObj {
     var sc: Scanner = .init(source);
-    var comp: Compiler = .init();
-    var parser: Parser = .init(alloc, &sc, chunk, st, &comp);
+    var comp: Compiler = try .init(alloc, .Script);
+    var parser: Parser = .init(alloc, &sc, st, &comp);
 
     parser.advance();
 
@@ -666,6 +665,6 @@ pub fn compile(
         try parser.declaration();
     }
 
-    try parser.end();
-    return parser.hadError;
+    const f = try parser.end();
+    return if (parser.hadError) null else f;
 }

@@ -150,6 +150,7 @@ pub const FuncObj = struct {
         ret.arity = arity;
         ret.name = name;
         ret.chunk = try .init(alloc);
+        return ret;
     }
 
     pub fn deinit(self: *FuncObj) void {

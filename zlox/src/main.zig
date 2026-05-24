@@ -17,14 +17,14 @@ pub fn main(init: std.process.Init) !void {
 
     const argv = try init.minimal.args.toSlice(arena);
 
-    var machine: vm.VM = try .init(arena);
+    var machine: *vm.VM = try .init(arena);
     defer machine.deinit();
 
     switch (argv.len) {
-        1 => try repl(arena, &machine, init.io),
+        1 => try repl(arena, machine, init.io),
         2 => try runFile(
             arena,
-            &machine,
+            machine,
             try std.Io.Dir.cwd().openFile(init.io, argv[1], .{ .mode = .read_only }),
             init.io,
         ),

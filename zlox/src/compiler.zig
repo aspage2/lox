@@ -3,6 +3,7 @@ const std = @import("std");
 
 const scanner = @import("scanner.zig");
 const Token = scanner.Token;
+const value = @import("value.zig");
 
 const Compiler = @This();
 
@@ -29,10 +30,20 @@ locals: std.ArrayList(Local) = undefined,
 /// Scope depth of 0 represents the global scope.
 scopeDepth: usize = 0,
 
-pub fn init() Compiler {
-    var ret: Compiler = .{};
+function: *value.FuncObj = undefined,
+funcType: FuncType,
+
+const FuncType = enum { Script, Func };
+
+pub fn init(alloc: std.mem.Allocator, funcType: FuncType) !Compiler {
+    var ret: Compiler = .{.funcType = funcType};
     ret.locals = .initBuffer(&ret.localBuffer);
     ret.scopeDepth = 0;
+    ret.function = try value.FuncObj.sentinelFunction(alloc);
+
+    const local = ret.locals.addOneAssumeCapacity();
+    local.depth = 0;
+    local.name = .{ .data = "", .type = .Error, .line = 1 };
     return ret;
 }
 
