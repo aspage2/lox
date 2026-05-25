@@ -356,7 +356,9 @@ pub fn statement(self: *Parser) anyerror!void {
         try self.printStatement();
     } else if (self.match(.If)) {
         try self.ifStatement();
-    } else if (self.match(.While)) {
+    } else if (self.match(.Return)) {
+        try self.returnStatement();
+    }else if (self.match(.While)) {
         try self.whileStatement();
     } else if (self.match(.For)) {
         try self.forStatement();
@@ -369,6 +371,19 @@ pub fn statement(self: *Parser) anyerror!void {
         }
     } else {
         try self.expressionStatement();
+    }
+}
+
+fn returnStatement(self: *Parser) !void {
+    if (self.compiler.funcType == .Script) {
+        self.err("Can't return from toplevel code");
+    }
+    if (self.match(.Semicolon)) {
+        try self.emitReturn();
+    } else {
+        try self.expression();
+        self.consumeSemicolon();
+        try self.emitOpCode(.Return);
     }
 }
 
@@ -705,8 +720,13 @@ fn emitTwo(self: *Parser, code: inst.OpCode, b: u8) !void {
     try c.put(b, @intCast(self.previous.line));
 }
 
+fn emitReturn(self: *Parser) !void {
+    try self.emitOpCode(.Nil);
+    try self.emitOpCode(.Return);
+}
+
 pub fn endCompiler(self: *Parser) !*value.FuncObj {
-    // try self.emitOpCode(.Return);
+    try self.emitReturn();
     
     const f = self.compiler.function;
     if (build_options.lox_debug and !self.hadError) {

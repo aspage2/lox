@@ -1,11 +1,6 @@
 
-fun a() {
-    print "Hello";
-    b();
+fun a(x) {
+    return x + x;
 }
 
-fun b() {
-    print "shit";
-}
-
-a();
+print a(3);
