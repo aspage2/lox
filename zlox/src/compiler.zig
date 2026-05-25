@@ -16,6 +16,9 @@ pub const Local = struct {
     depth: ?usize,
 };
 
+/// Nested compilers all the way down.
+enclosing: ?*Compiler,
+
 /// Local stack
 /// In lox, the behavior of locals in a scope is stack-like.
 /// The locals ArrayList tracks locals as they enter and leave
@@ -33,10 +36,10 @@ scopeDepth: usize = 0,
 function: *value.FuncObj = undefined,
 funcType: FuncType,
 
-const FuncType = enum { Script, Func };
+pub const FuncType = enum { Script, Func };
 
-pub fn init(alloc: std.mem.Allocator, funcType: FuncType) !Compiler {
-    var ret: Compiler = .{.funcType = funcType};
+pub fn init(alloc: std.mem.Allocator, funcType: FuncType, enclosing: ?*Compiler) !Compiler {
+    var ret: Compiler = .{.funcType = funcType, .enclosing = enclosing};
     ret.locals = .initBuffer(&ret.localBuffer);
     ret.scopeDepth = 0;
     ret.function = try value.FuncObj.sentinelFunction(alloc);
@@ -50,6 +53,7 @@ pub fn init(alloc: std.mem.Allocator, funcType: FuncType) !Compiler {
 /// After a local's initializer is parsed, it is marked "initialized"
 /// by the parser.
 pub fn markInitialized(self: *Compiler) void {
+    if (self.scopeDepth == 0) return;
     const l = self.locals.items.len;
     self.locals.items[l - 1].depth = self.scopeDepth;
 }

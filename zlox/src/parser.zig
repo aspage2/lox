@@ -46,7 +46,7 @@ const maxRuleSize = std.math.maxInt(@typeInfo(TokenType).@"enum".tag_type);
 
 // TABLE
 const ents = [_]Entry{
-    ruleEntry(.LeftParen, grouping, null, .None),
+    ruleEntry(.LeftParen, grouping, call, .Call),
     ruleEntry(.RightParen, null, null, .None),
     ruleEntry(.LeftBrace, null, null, .None),
     ruleEntry(.RightBrace, null, null, .None),
@@ -166,6 +166,28 @@ pub fn init(
     };
 }
 
+fn call(self: *Parser, _: bool) !void {
+    const argCount = try self.argList();
+    try self.emitTwo(.Call, argCount);
+}
+
+fn argList(self: *Parser) !u8 {
+    var count: u8 = 0;
+    if (!self.check(.RightParen)) {
+        while (true) {
+            try self.expression();
+            if (count == 255) {
+                self.err("argcount cannot exceed 255");
+            } else {
+                count += 1;
+            }
+            if (!self.match(.Comma)) break;
+        }
+    }
+    self.consume(.RightParen, "call params must end with ')'");
+    return count;
+}
+
 pub fn advance(self: *Parser) void {
     self.previous = self.current;
     while (true) {
@@ -199,13 +221,56 @@ fn errorAt(self: *Parser, tok: *const Token, msg: []const u8) void {
 }
 
 pub fn declaration(self: *Parser) !void {
-    if (self.match(.Var)) {
+    if (self.match(.Fun)) {
+        try self.funDeclaration();
+    } else if (self.match(.Var)) {
         try self.varDeclaration();
     } else {
         try self.statement();
     }
 
     if (self.panicMode) self.synchronize();
+}
+
+fn funDeclaration(self: *Parser) anyerror!void {
+    const global = try self.parseVariable("Expect a function name");
+    self.compiler.markInitialized();
+    try self.function(.Func);
+    try self.defineVariable(global);
+}
+
+fn function(self: *Parser, typ: Compiler.FuncType) !void {
+    var newCompiler: Compiler = try .init(self.alloc, typ, self.compiler);
+    self.compiler = &newCompiler;
+    // Assign the name of the function
+    if (typ != .Script) {
+        self.compiler.function.name = try self.stringTable.make(self.previous.data);
+    }
+
+    newCompiler.beginScope();
+
+    self.consume(.LeftParen, "Function parameters must be enclosed by ( )");
+    if (!self.check(.RightParen)) {
+        while (true) {
+            self.compiler.function.arity += 1;
+            if (self.compiler.function.arity > 255) {
+                self.errorAtCurrent("Can't have more than 255 params");
+            }
+            const paramName = try self.parseVariable("Expect parameter name");
+            try self.defineVariable(paramName);
+
+            if (!self.match(.Comma)) break;
+        }
+    }
+    self.consume(.RightParen, "Missing closing ')'");
+    self.consume(.LeftBrace, "Function body must be enclosed by { }");
+    try self.block();
+
+    const func = try self.endCompiler();
+    const o = try self.alloc.create(value.Obj);
+    o.* = .{.inst = .{ .Func = func }, .next = null};
+    const f = try self.makeConstant(.{.Obj = o});
+    try self.emitTwo(.Constant, f);
 }
 
 fn varDeclaration(self: *Parser) !void {
@@ -640,13 +705,14 @@ fn emitTwo(self: *Parser, code: inst.OpCode, b: u8) !void {
     try c.put(b, @intCast(self.previous.line));
 }
 
-pub fn end(self: *Parser) !*value.FuncObj {
+pub fn endCompiler(self: *Parser) !*value.FuncObj {
     // try self.emitOpCode(.Return);
     
     const f = self.compiler.function;
     if (build_options.lox_debug and !self.hadError) {
         try self.currentChunk().disassemble(f.name orelse "<script>");
     }
+    if (self.compiler.enclosing) |e| self.compiler = e;
     return f;
 }
 
@@ -656,7 +722,7 @@ pub fn compile(
     st: *value.StringTable,
 ) !?*value.FuncObj {
     var sc: Scanner = .init(source);
-    var comp: Compiler = try .init(alloc, .Script);
+    var comp: Compiler = try .init(alloc, .Script, null);
     var parser: Parser = .init(alloc, &sc, st, &comp);
 
     parser.advance();
@@ -665,6 +731,6 @@ pub fn compile(
         try parser.declaration();
     }
 
-    const f = try parser.end();
+    const f = try parser.endCompiler();
     return if (parser.hadError) null else f;
 }

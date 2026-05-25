@@ -68,5 +68,9 @@ fn runFile(
     const fileSize = try file.length(io);
     const source = try rd.interface.readAlloc(alloc, fileSize);
     defer alloc.free(source);
-    _ = try machine.interpret(source);
+    switch (try machine.interpret(source)) {
+        .CompileError => std.debug.print("Compiler error", .{}),
+        .RuntimeError => std.debug.print("Runtime error", .{}),
+        .Ok => {},
+    }
 }
