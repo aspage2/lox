@@ -17,7 +17,7 @@ pub fn main(init: std.process.Init) !void {
 
     const argv = try init.minimal.args.toSlice(arena);
 
-    var machine: *vm.VM = try .init(arena);
+    var machine: *vm.VM = try .init(arena, init.io);
     defer machine.deinit();
 
     switch (argv.len) {

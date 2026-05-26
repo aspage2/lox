@@ -70,6 +70,7 @@ pub fn printObject(obj: *const Obj) void {
     switch (obj.inst) {
         .String => |s| std.debug.print("\"{s}\"", .{s}),
         .Func => |f| f.print(),
+        .NativeFn => std.debug.print("<native>", .{}),
     }
 }
 
@@ -78,11 +79,13 @@ pub fn printObject(obj: *const Obj) void {
 pub const ObjType = enum(u8) {
     String,
     Func,
+    NativeFn,
 };
 
 pub const SpecificObj = union(ObjType) {
     String: StringObj,
     Func: *FuncObj,
+    NativeFn: NativeFn,
 };
 
 pub const Obj = struct {
@@ -93,7 +96,7 @@ pub const Obj = struct {
     fn equals(self: *Obj, other: *Obj) bool {
         switch (self.inst) {
             .String => |s| return std.mem.eql(u8, s, other.inst.String),
-            .Func => return false,
+            else => return false,
         }
     }
 };
@@ -165,3 +168,6 @@ pub const FuncObj = struct {
         }
     }
 };
+
+pub const NativeFn = *const fn(io: std.Io, argCount: u8, args: [*]Value) Value;
+

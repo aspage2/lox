@@ -4,6 +4,8 @@ const inst = @import("inst.zig");
 const value = @import("value.zig");
 const compile = @import("parser.zig").compile;
 
+const nativeFns = @import("nativeFuncs.zig");
+
 const build_opts = @import("build_options");
 
 pub const InterpretResult = enum(u8) {
@@ -60,6 +62,7 @@ const CallFrame = struct {
 
 pub const VM = struct {
     alloc: std.mem.Allocator,
+    io: std.Io,
 
     frameBuf: [FramesMax]CallFrame = undefined,
     frames: std.ArrayList(CallFrame) = undefined,
@@ -73,9 +76,10 @@ pub const VM = struct {
 
     globals: std.array_hash_map.String(value.Value),
 
-    pub fn init(alloc: std.mem.Allocator) !*VM {
+    pub fn init(alloc: std.mem.Allocator, io: std.Io) !*VM {
         const ret = try alloc.create(VM);
         ret.* = .{
+            .io = io,
             .alloc = alloc,
             .stackSize = 0,
             .stack = undefined,
@@ -84,6 +88,7 @@ pub const VM = struct {
             .globals = try .init(alloc, &.{}, &.{}),
         };
         ret.frames = .initBuffer(&ret.frameBuf);
+        try ret.defineNative("clock", nativeFns.clock);
         return ret;
     }
 
@@ -96,7 +101,7 @@ pub const VM = struct {
 
     pub fn allocateString(self: *VM, data: []const u8) !*value.Obj {
         const o = try self.allocateObject();
-        o.inst.String = try self.strings.make(data);
+        o.inst = .{.String = try self.strings.make(data)};
         return o;
     }
 
@@ -411,28 +416,36 @@ pub const VM = struct {
                     frame.ip -= offset;
                     frame.ip += 1;
                 },
-                @intFromEnum(inst.OpCode.Call) => {
+                @intFromEnum(inst.OpCode.Call) => blk: {
                     const argCount = frame.take_operand(u8);
                     const val = self.stackPeek(argCount).?;
-                    const func = switch (val) {
+                    switch (val) {
                         .Obj => |o| switch(o.inst) {
-                            .Func => |f| f,
-                            else => {
-                                self.runtimeError("Attempt to call non-function value {any}", .{val});
-                                return .RuntimeError;
+                            .Func => |f| {
+                                if (!self.call(f, argCount)) {
+                                    return .RuntimeError;
+                                }
+                                frame = &self.frames.items[self.frames.items.len-1];
+                                codePtr = frame.function.chunk.code.items.ptr;
+                                break :blk;
                             },
+                            .NativeFn => |n| {
+                                const result = n(
+                                    self.io,
+                                    argCount, 
+                                    @as([*]value.Value, &self.stack) + self.stackSize - argCount - 1,
+                                );
+                                try self.stackPush(result);
+                                frame.ip += 1;
+                                break :blk;
+                            },
+                            else => {},
                         },
-                        else => {
-                            self.runtimeError("Attempt to call non-function value {any}", .{val});
-                            return .RuntimeError;
-                        },
-                    };
-
-                    if (!self.call(func, argCount)) {
-                        return .RuntimeError;
+                        else => {},
                     }
-                    frame = &self.frames.items[self.frames.items.len-1];
-                    codePtr = frame.function.chunk.code.items.ptr;
+
+                    self.runtimeError("Attempt to call non-function value {any}", .{val});
+                    return .RuntimeError;
                 },
                 else => {},
             }
@@ -477,7 +490,7 @@ pub const VM = struct {
             }
             std.debug.print("\n[line {d}] in ", .{l});
             if (frame.function.name) |n| {
-                std.debug.print("<function {s}>\n", .{n});
+                std.debug.print("in {s}\n", .{n});
             } else {
                 std.debug.print("script\n", .{});
             }
@@ -485,4 +498,17 @@ pub const VM = struct {
         }
         self.stackReset();
     }
+
+    pub fn defineNative(self: *VM, name: []const u8, func: value.NativeFn) !void {
+        const str = try self.allocateString(name);
+        try self.stackPush(.{.Obj = str});
+        const nativeObj = try self.allocateObject();
+        nativeObj.inst = .{ .NativeFn = func };
+        const val: value.Value = .{.Obj = nativeObj};
+        try self.stackPush(val);
+        try self.globals.put(self.alloc, str.inst.String, .{ .Obj = nativeObj });
+        _ = try self.stackPop();
+        _ = try self.stackPop();
+    }
 };
+

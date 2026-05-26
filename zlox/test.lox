@@ -1,6 +1,2 @@
 
-fun a(x) {
-    return x + x;
-}
-
-print a(3);
+print clock();
