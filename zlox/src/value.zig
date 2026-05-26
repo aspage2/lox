@@ -1,3 +1,4 @@
+const inst = @import("inst.zig");
 const std = @import("std");
 
 pub const ValType = enum {
@@ -67,7 +68,9 @@ pub fn printValue(val: Value) void {
 
 pub fn printObject(obj: *const Obj) void {
     switch (obj.inst) {
-        .String => |s| std.debug.print("\"{s}\"", .{s.data}),
+        .String => |s| std.debug.print("\"{s}\"", .{s}),
+        .Func => |f| f.print(),
+        .NativeFn => std.debug.print("<native>", .{}),
     }
 }
 
@@ -75,10 +78,14 @@ pub fn printObject(obj: *const Obj) void {
 
 pub const ObjType = enum(u8) {
     String,
+    Func,
+    NativeFn,
 };
 
 pub const SpecificObj = union(ObjType) {
-    String: *StringObj,
+    String: StringObj,
+    Func: *FuncObj,
+    NativeFn: NativeFn,
 };
 
 pub const Obj = struct {
@@ -88,24 +95,17 @@ pub const Obj = struct {
 
     fn equals(self: *Obj, other: *Obj) bool {
         switch (self.inst) {
-            .String => |s| {
-                return s == other.inst.String;
-            },
+            .String => |s| return std.mem.eql(u8, s, other.inst.String),
+            else => return false,
         }
     }
 };
 
-pub const StringObj = struct {
-    data: []const u8,
-
-    pub fn deinit(self: *StringObj, alloc: std.mem.Allocator) void {
-        alloc.free(self.data);
-    }
-};
+pub const StringObj = []const u8;
 
 pub const StringTable = struct {
     alloc: std.mem.Allocator,
-    tbl: std.array_hash_map.String(*StringObj),
+    tbl: std.array_hash_map.String(void),
 
     pub fn init(alloc: std.mem.Allocator) !StringTable {
         return .{
@@ -115,27 +115,59 @@ pub const StringTable = struct {
     }
 
     pub fn deinit(self: *StringTable) void {
-        for (self.tbl.values()) |v| {
-            self.alloc.free(v.data);
-            self.alloc.destroy(v);
+        for (self.tbl.keys()) |k| {
+            self.alloc.free(k);
         }
+        self.tbl.deinit(self.alloc);
     }
 
-    pub fn make(self: *StringTable, str: []const u8) !*StringObj {
-        if (self.tbl.get(str)) |ent| {
-            return ent;
+    pub fn make(self: *StringTable, str: []const u8) !StringObj {
+        if (self.tbl.getKey(str)) |k| {
+            return k;
         }
-        const sobj = try self.alloc.create(StringObj);
-        sobj.data = try self.alloc.dupe(u8, str);
-        try self.tbl.put(self.alloc, sobj.data, sobj);
+        const sobj = try self.alloc.dupe(u8, str);
+        try self.tbl.put(self.alloc, sobj, {});
         return sobj;
     }
 
     pub fn pprint(self: *StringTable) void {
         std.debug.print("<----STRING TABLE---->\n", .{});
-        for (self.tbl.values()) |v| {
-            std.debug.print("{*} {d:>6} {s}\n", .{ v.data.ptr, v.data.len, v.data });
+        for (self.tbl.keys()) |k| {
+            std.debug.print("{*} {d:>6} {s}\n", .{ k.ptr, k.len, k });
         }
         std.debug.print("</---STRING TABLE---->\n", .{});
     }
 };
+
+pub const FuncObj = struct {
+    arity: u8,
+    chunk: inst.Chunk,
+    name: ?StringObj,
+
+    pub fn sentinelFunction(alloc: std.mem.Allocator) !*FuncObj {
+        return FuncObj.init(alloc, null, 0);
+    }
+
+    pub fn init(alloc: std.mem.Allocator, name: ?StringObj, arity: u8) !*FuncObj {
+        const ret = try alloc.create(FuncObj);
+        ret.arity = arity;
+        ret.name = name;
+        ret.chunk = try .init(alloc);
+        return ret;
+    }
+
+    pub fn deinit(self: *FuncObj) void {
+        self.chunk.deinit();
+    }
+
+    fn print(self: *FuncObj) void {
+        if (self.name) |n| {
+            std.debug.print("<func {s}>", .{n});
+        } else {
+            std.debug.print("<script>", .{});
+        }
+    }
+};
+
+pub const NativeFn = *const fn(io: std.Io, argCount: u8, args: [*]Value) Value;
+

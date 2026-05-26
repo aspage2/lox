@@ -3,6 +3,7 @@ const std = @import("std");
 
 const scanner = @import("scanner.zig");
 const Token = scanner.Token;
+const value = @import("value.zig");
 
 const Compiler = @This();
 
@@ -14,6 +15,9 @@ pub const Local = struct {
     /// uninitialized locals have a null depth to begin.
     depth: ?usize,
 };
+
+/// Nested compilers all the way down.
+enclosing: ?*Compiler,
 
 /// Local stack
 /// In lox, the behavior of locals in a scope is stack-like.
@@ -29,16 +33,27 @@ locals: std.ArrayList(Local) = undefined,
 /// Scope depth of 0 represents the global scope.
 scopeDepth: usize = 0,
 
-pub fn init() Compiler {
-    var ret: Compiler = .{};
+function: *value.FuncObj = undefined,
+funcType: FuncType,
+
+pub const FuncType = enum { Script, Func };
+
+pub fn init(alloc: std.mem.Allocator, funcType: FuncType, enclosing: ?*Compiler) !Compiler {
+    var ret: Compiler = .{.funcType = funcType, .enclosing = enclosing};
     ret.locals = .initBuffer(&ret.localBuffer);
     ret.scopeDepth = 0;
+    ret.function = try value.FuncObj.sentinelFunction(alloc);
+
+    const local = ret.locals.addOneAssumeCapacity();
+    local.depth = 0;
+    local.name = .{ .data = "", .type = .Error, .line = 1 };
     return ret;
 }
 
 /// After a local's initializer is parsed, it is marked "initialized"
 /// by the parser.
 pub fn markInitialized(self: *Compiler) void {
+    if (self.scopeDepth == 0) return;
     const l = self.locals.items.len;
     self.locals.items[l - 1].depth = self.scopeDepth;
 }

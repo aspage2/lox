@@ -4,6 +4,8 @@ const inst = @import("inst.zig");
 const value = @import("value.zig");
 const compile = @import("parser.zig").compile;
 
+const nativeFns = @import("nativeFuncs.zig");
+
 const build_opts = @import("build_options");
 
 pub const InterpretResult = enum(u8) {
@@ -16,12 +18,54 @@ pub const RuntimeError = error{
     StackEmpty,
 };
 
-const StackMax: usize = 256;
+
+/// Max depth of the call stack (max recursion depth)
+const FramesMax: usize = 64;
+
+/// Max depth of the VM operation stack
+const StackMax: usize = (std.math.maxInt(u8) + 1) * 64;
+
+
+const CallFrame = struct {
+    function: *value.FuncObj,
+    ip: usize,
+    slots: [*]value.Value,
+    
+    fn take_operand(self: *CallFrame, comptime T: type) T {
+        const chunk = self.function.chunk;
+        const code = chunk.code;
+        const constants = chunk.constants;
+        switch (T) {
+            u8 => {
+                self.ip += 1;
+                return code.items.ptr[self.ip];
+            },
+            u16 => {
+                self.ip += 2;
+                const x = code.items[self.ip - 1 .. self.ip + 1];
+                return std.mem.readInt(u16, @ptrCast(x), .little);
+            },
+            value.Value => {
+                self.ip += 1;
+                const idx = code.items.ptr[self.ip];
+                return constants.items.ptr[idx];
+            },
+            value.StringObj => {
+                self.ip += 1;
+                const idx = code.items.ptr[self.ip];
+                return constants.items.ptr[idx].Obj.inst.String;
+            },
+            else => @panic("unsupported type"),
+        }
+    }
+};
 
 pub const VM = struct {
     alloc: std.mem.Allocator,
-    chunk: *inst.Chunk,
-    ip: usize,
+    io: std.Io,
+
+    frameBuf: [FramesMax]CallFrame = undefined,
+    frames: std.ArrayList(CallFrame) = undefined,
 
     stack: [StackMax]value.Value,
     stackSize: usize,
@@ -32,17 +76,20 @@ pub const VM = struct {
 
     globals: std.array_hash_map.String(value.Value),
 
-    pub fn init(alloc: std.mem.Allocator) !VM {
-        return .{
+    pub fn init(alloc: std.mem.Allocator, io: std.Io) !*VM {
+        const ret = try alloc.create(VM);
+        ret.* = .{
+            .io = io,
             .alloc = alloc,
-            .chunk = undefined,
-            .ip = undefined,
             .stackSize = 0,
             .stack = undefined,
             .objList = undefined,
             .strings = try .init(alloc),
             .globals = try .init(alloc, &.{}, &.{}),
         };
+        ret.frames = .initBuffer(&ret.frameBuf);
+        try ret.defineNative("clock", nativeFns.clock);
+        return ret;
     }
 
     pub fn allocateObject(self: *VM) !*value.Obj {
@@ -54,7 +101,7 @@ pub const VM = struct {
 
     pub fn allocateString(self: *VM, data: []const u8) !*value.Obj {
         const o = try self.allocateObject();
-        o.inst.String = try self.strings.make(data);
+        o.inst = .{.String = try self.strings.make(data)};
         return o;
     }
 
@@ -64,9 +111,13 @@ pub const VM = struct {
             maybeO = obj.next;
             switch (obj.inst) {
                 .String => |s| {
-                    self.alloc.free(s.data);
+                    s.deinit(self.alloc);
                     self.alloc.destroy(s);
                 },
+                .Func => |f| {
+                    f.deinit();
+                    self.alloc.free(f);
+                }
             }
             self.alloc.destroy(obj);
         }
@@ -95,25 +146,29 @@ pub const VM = struct {
 
     pub fn deinit(self: *VM) void {
         self.globals.deinit(self.alloc);
+        self.alloc.destroy(self);
     }
 
     pub fn interpret(self: *VM, source: []const u8) !InterpretResult {
-        var chunk: inst.Chunk = try .init(self.alloc);
-        defer chunk.deinit();
-
         self.strings = try .init(self.alloc);
         defer self.strings.deinit();
 
-        const hadError = try compile(self.alloc, source, &chunk, &self.strings);
-        if (hadError) return .CompileError;
+        const func = try compile(self.alloc, source, &self.strings);
+        if (func == null) return .CompileError;
         if (build_opts.lox_debug) {
             std.debug.print("\x1b[2;37m", .{});
             self.strings.pprint();
             std.debug.print("\x1b[0m", .{});
         }
+        const o = try self.allocateObject();
+        o.inst = .{.Func = func.?};
+        try self.stackPush(.{ .Obj = o });
 
-        self.chunk = &chunk;
-        self.ip = 0;
+        const frame = self.frames.addOneAssumeCapacity();
+        frame.function = func.?;
+        frame.ip = 0;
+        frame.slots = &self.stack;
+
         if (build_opts.lox_debug) {
             std.debug.print("\x1b[2;37m--- RUNNING ---\n\x1b[0m", .{});
         }
@@ -126,35 +181,12 @@ pub const VM = struct {
         return res;
     }
 
-    inline fn take_operand(self: *VM, comptime T: type) T {
-        switch (T) {
-            u8 => {
-                self.ip += 1;
-                return self.chunk.code.items.ptr[self.ip];
-            },
-            u16 => {
-                self.ip += 2;
-                const x = self.chunk.code.items[self.ip - 1 .. self.ip + 1];
-                return std.mem.readInt(u16, @ptrCast(x), .little);
-            },
-            value.Value => {
-                self.ip += 1;
-                const idx = self.chunk.code.items.ptr[self.ip];
-                return self.chunk.constants.items[idx];
-            },
-            *value.StringObj => {
-                self.ip += 1;
-                const idx = self.chunk.code.items.ptr[self.ip];
-                return self.chunk.constants.items[idx].Obj.inst.String;
-            },
-            else => @panic("unsupported type"),
-        }
-    }
 
     fn run(self: *VM) !InterpretResult {
-        const codePtr: [*]u8 = self.chunk.code.items.ptr;
+        var frame = &self.frames.items[self.frames.items.len-1];
+        var codePtr: [*]u8 = frame.function.chunk.code.items.ptr;
 
-        while (self.ip < self.chunk.len()) : (self.ip += 1) {
+        while (frame.ip < frame.function.chunk.len()) {
             if (comptime build_opts.lox_debug) {
                 std.debug.print("\x1b[2;37m", .{});
                 std.debug.print("          ", .{});
@@ -164,10 +196,10 @@ pub const VM = struct {
                     std.debug.print(" ]", .{});
                 }
                 std.debug.print("\n", .{});
-                _ = try self.chunk.disassembleInstruction(self.ip);
+                _ = try frame.function.chunk.disassembleInstruction(frame.ip);
                 std.debug.print("\x1b[0m", .{});
             }
-            switch (codePtr[self.ip]) {
+            switch (codePtr[frame.ip]) {
                 @intFromEnum(inst.OpCode.Return) => {
                     // FixMe: Implement return semantics
                     std.debug.print("Returning value: ", .{});
@@ -176,9 +208,10 @@ pub const VM = struct {
                     return InterpretResult.Ok;
                 },
                 @intFromEnum(inst.OpCode.Constant) => {
-                    const vLoc: usize = @intCast(self.take_operand(u8));
-                    const val = self.chunk.constants.items[vLoc];
+                    const vLoc: usize = @intCast(frame.take_operand(u8));
+                    const val = frame.function.chunk.constants.items[vLoc];
                     try self.stackPush(val);
+                    frame.ip += 1;
                 },
                 @intFromEnum(inst.OpCode.Negate) => {
                     const val = self.stackPeek(0).?;
@@ -192,6 +225,7 @@ pub const VM = struct {
                             return InterpretResult.RuntimeError;
                         },
                     }
+                    frame.ip += 1;
                 },
                 @intFromEnum(inst.OpCode.Add) => {
                     const b = self.stackPeek(0).?;
@@ -219,13 +253,14 @@ pub const VM = struct {
                             const newData = try std.mem.concat(
                                 self.alloc,
                                 u8,
-                                &.{ ao.inst.String.data, bo.inst.String.data },
+                                &.{ ao.inst.String, bo.inst.String },
                             );
                             defer self.alloc.free(newData);
                             try self.stackPush(.{ .Obj = try self.allocateString(newData) });
                         },
                         else => unreachable,
                     }
+                    frame.ip += 1;
                 },
                 @intFromEnum(inst.OpCode.Subtract) => {
                     const b = self.stackPeek(0).?.expectType(.Number) orelse {
@@ -238,6 +273,7 @@ pub const VM = struct {
                     };
                     self.stackDrop(2);
                     try self.stackPush(.{ .Number = a - b });
+                    frame.ip += 1;
                 },
                 @intFromEnum(inst.OpCode.Multiply) => {
                     const b = self.stackPeek(0).?.expectType(.Number) orelse {
@@ -250,6 +286,7 @@ pub const VM = struct {
                     };
                     self.stackDrop(2);
                     try self.stackPush(.{ .Number = a * b });
+                    frame.ip += 1;
                 },
                 @intFromEnum(inst.OpCode.Divide) => {
                     const b = self.stackPeek(0).?.expectType(.Number) orelse {
@@ -262,18 +299,30 @@ pub const VM = struct {
                     };
                     self.stackDrop(2);
                     try self.stackPush(.{ .Number = a / b });
+                    frame.ip += 1;
                 },
-                @intFromEnum(inst.OpCode.Nil) => try self.stackPush(.Nil),
-                @intFromEnum(inst.OpCode.True) => try self.stackPush(.{ .Bool = true }),
-                @intFromEnum(inst.OpCode.False) => try self.stackPush(.{ .Bool = false }),
+                @intFromEnum(inst.OpCode.Nil) => {
+                    try self.stackPush(.Nil);
+                    frame.ip += 1;
+                },
+                @intFromEnum(inst.OpCode.True) => {
+                    try self.stackPush(.{ .Bool = true });
+                    frame.ip += 1;
+                },
+                @intFromEnum(inst.OpCode.False) => {
+                    try self.stackPush(.{ .Bool = false });
+                    frame.ip += 1;
+                },
                 @intFromEnum(inst.OpCode.Not) => {
                     const v = try self.stackPop();
                     try self.stackPush(.{ .Bool = v.isFalsey() });
+                    frame.ip += 1;
                 },
                 @intFromEnum(inst.OpCode.Equal) => {
                     const a = try self.stackPop();
                     const b = try self.stackPop();
                     try self.stackPush(.{ .Bool = a.equals(b) });
+                    frame.ip += 1;
                 },
                 @intFromEnum(inst.OpCode.Less) => {
                     const b = self.stackPeek(0).?.expectType(.Number) orelse {
@@ -286,6 +335,7 @@ pub const VM = struct {
                     };
                     self.stackDrop(2);
                     try self.stackPush(.{ .Bool = a < b });
+                    frame.ip += 1;
                 },
                 @intFromEnum(inst.OpCode.Greater) => {
                     const b = self.stackPeek(0).?.expectType(.Number) orelse {
@@ -298,67 +348,126 @@ pub const VM = struct {
                     };
                     self.stackDrop(2);
                     try self.stackPush(.{ .Bool = a > b });
+                    frame.ip += 1;
                 },
                 @intFromEnum(inst.OpCode.Print) => {
                     const v = try self.stackPop();
                     value.printValue(v);
                     std.debug.print("\n", .{});
+                    frame.ip += 1;
                 },
                 @intFromEnum(inst.OpCode.Pop) => {
                     _ = try self.stackPop();
+                    frame.ip += 1;
                 },
                 @intFromEnum(inst.OpCode.DefineGlobal) => {
-                    const globalName = self.take_operand(*value.StringObj);
+                    const globalName = frame.take_operand(value.StringObj);
                     const val = self.stackPeek(0).?;
-                    try self.globals.put(self.alloc, globalName.data, val);
+                    try self.globals.put(self.alloc, globalName, val);
                     self.stackDrop(1);
+                    frame.ip += 1;
                 },
                 @intFromEnum(inst.OpCode.GetGlobal) => {
-                    const name = self.take_operand(*value.StringObj);
+                    const name = frame.take_operand(value.StringObj);
 
-                    if (self.globals.get(name.data)) |val| {
+                    if (self.globals.get(name)) |val| {
                         try self.stackPush(val);
                     } else {
-                        self.runtimeError("Undefined variable: {s}", .{name.data});
+                        self.runtimeError("Undefined variable: {s}", .{name});
                         return .RuntimeError;
                     }
+                    frame.ip += 1;
                 },
                 @intFromEnum(inst.OpCode.SetGlobal) => {
-                    const name = self.take_operand(*value.StringObj);
-                    if (self.globals.getEntry(name.data)) |ent| {
+                    const name = frame.take_operand(value.StringObj);
+                    if (self.globals.getEntry(name)) |ent| {
                         ent.value_ptr.* = self.stackPeek(0).?;
                     } else {
-                        self.runtimeError("Undefined variable: {s}", .{name.data});
+                        self.runtimeError("Undefined variable: {s}", .{name});
                         return .RuntimeError;
                     }
+                    frame.ip += 1;
                 },
                 @intFromEnum(inst.OpCode.SetLocal) => {
-                    const slot = self.take_operand(u8);
-                    self.stack[slot] = self.stackPeek(0).?;
+                    const slot = frame.take_operand(u8);
+                    frame.slots[slot] = self.stackPeek(0).?;
+                    frame.ip += 1;
                 },
                 @intFromEnum(inst.OpCode.GetLocal) => {
-                    const slot = self.take_operand(u8);
-                    try self.stackPush(self.stack[slot]);
+                    const slot = frame.take_operand(u8);
+                    try self.stackPush(frame.slots[slot]);
+                    frame.ip += 1;
                 },
                 @intFromEnum(inst.OpCode.JumpIfFalse) => {
-                    const offset = self.take_operand(u16);
+                    const offset = frame.take_operand(u16);
                     const top = self.stackPeek(0).?;
                     if (top.isFalsey()) {
-                        self.ip += offset;
+                        frame.ip += offset;
                     }
+                    frame.ip += 1;
                 },
                 @intFromEnum(inst.OpCode.Jump) => {
-                    const offset = self.take_operand(u16);
-                    self.ip += offset;
+                    const offset = frame.take_operand(u16);
+                    frame.ip += offset;
+                    frame.ip += 1;
                 },
                 @intFromEnum(inst.OpCode.Loop) => {
-                    const offset = self.take_operand(u16);
-                    self.ip -= offset;
+                    const offset = frame.take_operand(u16);
+                    frame.ip -= offset;
+                    frame.ip += 1;
+                },
+                @intFromEnum(inst.OpCode.Call) => blk: {
+                    const argCount = frame.take_operand(u8);
+                    const val = self.stackPeek(argCount).?;
+                    switch (val) {
+                        .Obj => |o| switch(o.inst) {
+                            .Func => |f| {
+                                if (!self.call(f, argCount)) {
+                                    return .RuntimeError;
+                                }
+                                frame = &self.frames.items[self.frames.items.len-1];
+                                codePtr = frame.function.chunk.code.items.ptr;
+                                break :blk;
+                            },
+                            .NativeFn => |n| {
+                                const result = n(
+                                    self.io,
+                                    argCount, 
+                                    @as([*]value.Value, &self.stack) + self.stackSize - argCount - 1,
+                                );
+                                try self.stackPush(result);
+                                frame.ip += 1;
+                                break :blk;
+                            },
+                            else => {},
+                        },
+                        else => {},
+                    }
+
+                    self.runtimeError("Attempt to call non-function value {any}", .{val});
+                    return .RuntimeError;
                 },
                 else => {},
             }
         }
         return InterpretResult.RuntimeError;
+    }
+
+    fn call(self: *VM, func: *value.FuncObj, argCount: u8) bool {
+        if (argCount != func.arity) {
+            self.runtimeError("Expect {d} args, got {d}", .{func.arity, argCount});
+            return false;
+        }
+
+        if (self.frames.items.len == FramesMax) {
+            self.runtimeError("Stack overflow", .{});
+        }
+        const newFrame = self.frames.addOneAssumeCapacity();
+        newFrame.function = func;
+        newFrame.ip = 0;
+        newFrame.slots = @as([*]value.Value, &self.stack) + (self.stackSize - 1 - argCount);
+
+        return true;
     }
 
     fn stackPeek(self: *VM, depth: usize) ?value.Value {
@@ -368,13 +477,38 @@ pub const VM = struct {
 
     fn runtimeError(self: *VM, comptime fmt: []const u8, args: anytype) void {
         std.debug.print(fmt, args);
-        var l: u32 = 0;
-        if (self.chunk.getLine(self.ip)) |line| {
-            l = line;
-        } else |e| {
-            std.debug.print("err getting line: {any}\n", .{e});
+        var i = self.frames.items.len - 1;
+        while (i >= 0) : (i -= 1) {
+            const frame = &self.frames.items[i];
+            const chunk = frame.function.chunk;
+
+            var l: u32 = 0;
+            if (chunk.getLine(frame.ip)) |line| {
+                l = line;
+            } else |e| {
+                std.debug.print("err getting line: {any}\n", .{e});
+            }
+            std.debug.print("\n[line {d}] in ", .{l});
+            if (frame.function.name) |n| {
+                std.debug.print("in {s}\n", .{n});
+            } else {
+                std.debug.print("script\n", .{});
+            }
+
         }
-        std.debug.print("\n[line {d}] in script\n", .{l});
         self.stackReset();
     }
+
+    pub fn defineNative(self: *VM, name: []const u8, func: value.NativeFn) !void {
+        const str = try self.allocateString(name);
+        try self.stackPush(.{.Obj = str});
+        const nativeObj = try self.allocateObject();
+        nativeObj.inst = .{ .NativeFn = func };
+        const val: value.Value = .{.Obj = nativeObj};
+        try self.stackPush(val);
+        try self.globals.put(self.alloc, str.inst.String, .{ .Obj = nativeObj });
+        _ = try self.stackPop();
+        _ = try self.stackPop();
+    }
 };
+

@@ -17,14 +17,14 @@ pub fn main(init: std.process.Init) !void {
 
     const argv = try init.minimal.args.toSlice(arena);
 
-    var machine: vm.VM = try .init(arena);
+    var machine: *vm.VM = try .init(arena, init.io);
     defer machine.deinit();
 
     switch (argv.len) {
-        1 => try repl(arena, &machine, init.io),
+        1 => try repl(arena, machine, init.io),
         2 => try runFile(
             arena,
-            &machine,
+            machine,
             try std.Io.Dir.cwd().openFile(init.io, argv[1], .{ .mode = .read_only }),
             init.io,
         ),
@@ -68,5 +68,9 @@ fn runFile(
     const fileSize = try file.length(io);
     const source = try rd.interface.readAlloc(alloc, fileSize);
     defer alloc.free(source);
-    _ = try machine.interpret(source);
+    switch (try machine.interpret(source)) {
+        .CompileError => std.debug.print("Compiler error", .{}),
+        .RuntimeError => std.debug.print("Runtime error", .{}),
+        .Ok => {},
+    }
 }

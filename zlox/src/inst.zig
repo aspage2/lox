@@ -59,6 +59,9 @@ pub const OpCode = enum(u8) {
     Jump,
     JumpIfFalse,
     Loop,
+
+    // Function calls
+    Call,
 };
 
 pub const InstructionError = error{
@@ -211,6 +214,7 @@ pub const Chunk = struct {
             @intFromEnum(OpCode.Jump) => return jumpInstruction("OP_JUMP", .forward, self, offset),
             @intFromEnum(OpCode.JumpIfFalse) => return jumpInstruction("OP_JUMP_IF_FALSE", .forward, self, offset),
             @intFromEnum(OpCode.Loop) => return jumpInstruction("OP_LOOP", .backward, self, offset),
+            @intFromEnum(OpCode.Call) => return byteInstruction("OP_CALL", self, offset),
             else => {
                 std.debug.print("Unknown opcode: {d}\n", .{inst});
                 return offset + 1;
