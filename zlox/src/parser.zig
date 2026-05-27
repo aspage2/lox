@@ -7,6 +7,7 @@ const TokenType = Scanner.TokenType;
 const Chunk = inst.Chunk;
 const value = @import("value.zig");
 const build_options = @import("build_options");
+const Heap = @import("heap.zig");
 
 const inst = @import("inst.zig");
 
@@ -100,7 +101,7 @@ fn getRule(op: TokenType) *const ParseRule {
 alloc: std.mem.Allocator,
 sc: *Scanner,
 compiler: *Compiler,
-stringTable: *value.StringTable,
+heap: *Heap,
 previous: Token = undefined,
 current: Token = undefined,
 hadError: bool = false,
@@ -155,13 +156,13 @@ const Precedence = enum(u8) {
 pub fn init(
     alloc: std.mem.Allocator,
     sc: *Scanner,
-    tbl: *value.StringTable,
+    heap: *Heap,
     compiler: *Compiler,
 ) Parser {
     return .{
         .alloc = alloc,
         .sc = sc,
-        .stringTable = tbl,
+        .heap = heap,
         .compiler = compiler,
     };
 }
@@ -244,7 +245,7 @@ fn function(self: *Parser, typ: Compiler.FuncType) !void {
     self.compiler = &newCompiler;
     // Assign the name of the function
     if (typ != .Script) {
-        self.compiler.function.name = try self.stringTable.make(self.previous.data);
+        self.compiler.function.name = try self.heap.strings.make(self.previous.data);
     }
 
     newCompiler.beginScope();
@@ -267,9 +268,9 @@ fn function(self: *Parser, typ: Compiler.FuncType) !void {
     try self.block();
 
     const func = try self.endCompiler();
-    const o = try self.alloc.create(value.Obj);
-    o.* = .{.inst = .{ .Func = func }, .next = null};
-    const f = try self.makeConstant(.{.Obj = o});
+    const o = try self.heap.allocateObject();
+    o.inst = .{.Func = func};
+    const f = try self.makeConstant(o.asValue());
     try self.emitTwo(.Constant, f);
 }
 
@@ -294,10 +295,8 @@ fn parseVariable(self: *Parser, comptime errMsg: []const u8) !u8 {
 }
 
 fn identifierConstant(self: *Parser, tok: Token) !u8 {
-    const sobj = try self.stringTable.make(tok.data);
-    const o = try self.alloc.create(value.Obj);
-    o.inst = .{ .String = sobj };
-    return try self.makeConstant(.{ .Obj = o });
+    const sobj = try self.heap.allocateString(tok.data);
+    return try self.makeConstant(sobj.asValue());
 }
 
 fn defineVariable(self: *Parser, loc: u8) !void {
@@ -543,10 +542,8 @@ fn grouping(self: *Parser, _: bool) !void {
 }
 
 fn string(self: *Parser, _: bool) !void {
-    const sobj = try self.stringTable.make(self.previous.data);
-    const o = try self.alloc.create(value.Obj);
-    o.inst = .{.String = sobj};
-    try self.emitConstant(.{ .Obj = o });
+    const sobj = try self.heap.allocateString(self.previous.data);
+    try self.emitConstant(sobj.asValue());
 }
 
 fn variable(self: *Parser, canParse: bool) !void {
@@ -739,7 +736,7 @@ pub fn endCompiler(self: *Parser) !*value.FuncObj {
 pub fn compile(
     alloc: std.mem.Allocator,
     source: []const u8,
-    st: *value.StringTable,
+    st: *Heap,
 ) !?*value.FuncObj {
     var sc: Scanner = .init(source);
     var comp: Compiler = try .init(alloc, .Script, null);

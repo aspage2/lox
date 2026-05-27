@@ -1,15 +1,17 @@
 const inst = @import("inst.zig");
+const Heap = @import("heap.zig");
 const std = @import("std");
 
-pub const ValType = enum {
+
+pub const ValueError = error{
+    UnexpectedType,
+};
+
+const ValType = enum {
     Bool,
     Number,
     Nil,
     Obj,
-};
-
-pub const ValueError = error{
-    UnexpectedType,
 };
 
 pub const Value = union(ValType) {
@@ -27,7 +29,7 @@ pub const Value = union(ValType) {
         };
     }
 
-    pub fn isObjType(self: Value, comptime typ: ObjType) bool {
+    pub fn isObjType(self: Value, comptime typ: Obj.Type) bool {
         return switch (self) {
             .Obj => |o| std.meta.activeTag(o) == typ,
             else => false,
@@ -74,22 +76,18 @@ pub fn printObject(obj: *const Obj) void {
     }
 }
 
-// Heap-allocated value types
-
-pub const ObjType = enum(u8) {
-    String,
-    Func,
-    NativeFn,
-};
-
-pub const SpecificObj = union(ObjType) {
-    String: StringObj,
-    Func: *FuncObj,
-    NativeFn: NativeFn,
-};
-
+/// Obj is a wrapper type for heap-allocated objects.
 pub const Obj = struct {
-    inst: SpecificObj,
+    const Type = enum(u8) {
+        String,
+        Func,
+        NativeFn,
+    };
+    inst: union(Type) {
+        String: StringObj,
+        Func: *FuncObj,
+        NativeFn: NativeFn,
+    },
 
     next: ?*Obj,
 
@@ -99,46 +97,18 @@ pub const Obj = struct {
             else => return false,
         }
     }
+
+    pub fn asValue(self: *Obj) Value {
+        return .{ .Obj = self };
+    }
 };
 
+/// As Zig has native support for slices, a stringobj
+/// from the book is just a u8 slice.
 pub const StringObj = []const u8;
 
-pub const StringTable = struct {
-    alloc: std.mem.Allocator,
-    tbl: std.array_hash_map.String(void),
-
-    pub fn init(alloc: std.mem.Allocator) !StringTable {
-        return .{
-            .alloc = alloc,
-            .tbl = try .init(alloc, &.{}, &.{}),
-        };
-    }
-
-    pub fn deinit(self: *StringTable) void {
-        for (self.tbl.keys()) |k| {
-            self.alloc.free(k);
-        }
-        self.tbl.deinit(self.alloc);
-    }
-
-    pub fn make(self: *StringTable, str: []const u8) !StringObj {
-        if (self.tbl.getKey(str)) |k| {
-            return k;
-        }
-        const sobj = try self.alloc.dupe(u8, str);
-        try self.tbl.put(self.alloc, sobj, {});
-        return sobj;
-    }
-
-    pub fn pprint(self: *StringTable) void {
-        std.debug.print("<----STRING TABLE---->\n", .{});
-        for (self.tbl.keys()) |k| {
-            std.debug.print("{*} {d:>6} {s}\n", .{ k.ptr, k.len, k });
-        }
-        std.debug.print("</---STRING TABLE---->\n", .{});
-    }
-};
-
+/// A FuncObj represents a callable subroutine in a lox
+/// program.
 pub const FuncObj = struct {
     arity: u8,
     chunk: inst.Chunk,
@@ -169,5 +139,6 @@ pub const FuncObj = struct {
     }
 };
 
-pub const NativeFn = *const fn(io: std.Io, argCount: u8, args: [*]Value) Value;
+/// A NativeFn is a lox callable implemented in Zig.
+pub const NativeFn = *const fn(io: std.Io, heap: *Heap, argCount: u8, args: [*]Value) Value;
 

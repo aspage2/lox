@@ -1,2 +1,8 @@
 
-print clock();
+fun a(x, y) {
+    return x + y;
+}
+
+print toString(toString);
+print toString(a);
+

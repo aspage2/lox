@@ -2,6 +2,8 @@ const std = @import("std");
 
 const inst = @import("inst.zig");
 const value = @import("value.zig");
+const Heap = @import("heap.zig");
+
 const compile = @import("parser.zig").compile;
 
 const nativeFns = @import("nativeFuncs.zig");
@@ -18,13 +20,11 @@ pub const RuntimeError = error{
     StackEmpty,
 };
 
-
 /// Max depth of the call stack (max recursion depth)
 const FramesMax: usize = 64;
 
 /// Max depth of the VM operation stack
 const StackMax: usize = (std.math.maxInt(u8) + 1) * 64;
-
 
 const CallFrame = struct {
     function: *value.FuncObj,
@@ -70,9 +70,7 @@ pub const VM = struct {
     stack: [StackMax]value.Value,
     stackSize: usize,
 
-    objList: ?*value.Obj,
-
-    strings: value.StringTable,
+    heap: *Heap,
 
     globals: std.array_hash_map.String(value.Value),
 
@@ -83,44 +81,13 @@ pub const VM = struct {
             .alloc = alloc,
             .stackSize = 0,
             .stack = undefined,
-            .objList = undefined,
-            .strings = try .init(alloc),
             .globals = try .init(alloc, &.{}, &.{}),
+            .heap = try .init(alloc),
         };
         ret.frames = .initBuffer(&ret.frameBuf);
         try ret.defineNative("clock", nativeFns.clock);
+        try ret.defineNative("toString", nativeFns.toString);
         return ret;
-    }
-
-    pub fn allocateObject(self: *VM) !*value.Obj {
-        const obj = try self.alloc.create(value.Obj);
-        obj.next = self.objList;
-        self.objList = obj;
-        return obj;
-    }
-
-    pub fn allocateString(self: *VM, data: []const u8) !*value.Obj {
-        const o = try self.allocateObject();
-        o.inst = .{.String = try self.strings.make(data)};
-        return o;
-    }
-
-    pub fn freeObject(self: *VM) void {
-        var maybeO = self.objList;
-        while (maybeO) |obj| {
-            maybeO = obj.next;
-            switch (obj.inst) {
-                .String => |s| {
-                    s.deinit(self.alloc);
-                    self.alloc.destroy(s);
-                },
-                .Func => |f| {
-                    f.deinit();
-                    self.alloc.free(f);
-                }
-            }
-            self.alloc.destroy(obj);
-        }
     }
 
     pub fn stackPush(self: *VM, val: value.Value) !void {
@@ -146,23 +113,23 @@ pub const VM = struct {
 
     pub fn deinit(self: *VM) void {
         self.globals.deinit(self.alloc);
+        self.heap.deinit();
+        self.alloc.destroy(self.heap);
         self.alloc.destroy(self);
     }
 
     pub fn interpret(self: *VM, source: []const u8) !InterpretResult {
-        self.strings = try .init(self.alloc);
-        defer self.strings.deinit();
 
-        const func = try compile(self.alloc, source, &self.strings);
+        const func = try compile(self.alloc, source, self.heap);
         if (func == null) return .CompileError;
         if (build_opts.lox_debug) {
             std.debug.print("\x1b[2;37m", .{});
-            self.strings.pprint();
+            self.heap.strings.pprint();
             std.debug.print("\x1b[0m", .{});
         }
-        const o = try self.allocateObject();
+        const o = try self.heap.allocateObject();
         o.inst = .{.Func = func.?};
-        try self.stackPush(.{ .Obj = o });
+        try self.stackPush(o.asValue());
 
         const frame = self.frames.addOneAssumeCapacity();
         frame.function = func.?;
@@ -175,7 +142,7 @@ pub const VM = struct {
         const res = self.run();
         if (build_opts.lox_debug) {
             std.debug.print("\x1b[2;37m", .{});
-            self.strings.pprint();
+            self.heap.strings.pprint();
             std.debug.print("\x1b[0m", .{});
         }
         return res;
@@ -256,7 +223,9 @@ pub const VM = struct {
                                 &.{ ao.inst.String, bo.inst.String },
                             );
                             defer self.alloc.free(newData);
-                            try self.stackPush(.{ .Obj = try self.allocateString(newData) });
+                            try self.stackPush(
+                                (try self.heap.takeString(self.alloc, newData)).asValue()
+                            );
                         },
                         else => unreachable,
                     }
@@ -432,8 +401,9 @@ pub const VM = struct {
                             .NativeFn => |n| {
                                 const result = n(
                                     self.io,
+                                    self.heap,
                                     argCount, 
-                                    @as([*]value.Value, &self.stack) + self.stackSize - argCount - 1,
+                                    @as([*]value.Value, &self.stack) + self.stackSize - argCount,
                                 );
                                 try self.stackPush(result);
                                 frame.ip += 1;
@@ -500,13 +470,13 @@ pub const VM = struct {
     }
 
     pub fn defineNative(self: *VM, name: []const u8, func: value.NativeFn) !void {
-        const str = try self.allocateString(name);
-        try self.stackPush(.{.Obj = str});
-        const nativeObj = try self.allocateObject();
+        const str = try self.heap.allocateString(name);
+        try self.stackPush(str.asValue());
+        const nativeObj = try self.heap.allocateObject();
         nativeObj.inst = .{ .NativeFn = func };
-        const val: value.Value = .{.Obj = nativeObj};
+        const val = nativeObj.asValue();
         try self.stackPush(val);
-        try self.globals.put(self.alloc, str.inst.String, .{ .Obj = nativeObj });
+        try self.globals.put(self.alloc, str.inst.String, val);
         _ = try self.stackPop();
         _ = try self.stackPop();
     }
