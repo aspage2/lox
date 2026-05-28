@@ -404,8 +404,17 @@ pub const VM = struct {
                                     self.heap,
                                     argCount, 
                                     @as([*]value.Value, &self.stack) + self.stackSize - argCount,
-                                );
-                                try self.stackPush(result);
+                                ) catch |e| {
+                                    self.runtimeError("{any}", .{e});
+                                    return .RuntimeError;
+                                };
+                                switch (result) {
+                                    .success => |v| try self.stackPush(v),
+                                    .failure => |msg| {
+                                        self.runtimeError("Error during native call: {s}", .{msg});
+                                        return .RuntimeError;
+                                    },
+                                }
                                 frame.ip += 1;
                                 break :blk;
                             },
@@ -447,9 +456,9 @@ pub const VM = struct {
 
     fn runtimeError(self: *VM, comptime fmt: []const u8, args: anytype) void {
         std.debug.print(fmt, args);
-        var i = self.frames.items.len - 1;
-        while (i >= 0) : (i -= 1) {
-            const frame = &self.frames.items[i];
+        var i = self.frames.items.len;
+        while (i > 0) : (i -= 1) {
+            const frame = &self.frames.items[i-1];
             const chunk = frame.function.chunk;
 
             var l: u32 = 0;

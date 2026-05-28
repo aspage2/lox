@@ -139,6 +139,12 @@ pub const FuncObj = struct {
     }
 };
 
+pub const NativeResult = union(enum) {
+    success: Value, failure: StringObj,
+};
+
 /// A NativeFn is a lox callable implemented in Zig.
-pub const NativeFn = *const fn(io: std.Io, heap: *Heap, argCount: u8, args: [*]Value) Value;
+pub const NativeFn = *const fn(
+    io: std.Io, heap: *Heap, argCount: u8, args: [*]Value,
+) anyerror!NativeResult;
 
