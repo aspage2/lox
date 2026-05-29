@@ -3,10 +3,6 @@ const Heap = @import("heap.zig");
 const std = @import("std");
 
 
-pub const ValueError = error{
-    UnexpectedType,
-};
-
 const ValType = enum {
     Bool,
     Number,
@@ -26,13 +22,6 @@ pub const Value = union(ValType) {
                 if (t == typ) return val;
                 return null;
             },
-        };
-    }
-
-    pub fn isObjType(self: Value, comptime typ: Obj.Type) bool {
-        return switch (self) {
-            .Obj => |o| std.meta.activeTag(o) == typ,
-            else => false,
         };
     }
 
@@ -72,7 +61,7 @@ pub fn printObject(obj: *const Obj) void {
     switch (obj.inst) {
         .String => |s| std.debug.print("\"{s}\"", .{s}),
         .Func => |f| f.print(),
-        .NativeFn => std.debug.print("<native>", .{}),
+        .NativeFn => |n| std.debug.print("<native {s}>", .{n.name}),
     }
 }
 
@@ -86,7 +75,7 @@ pub const Obj = struct {
     inst: union(Type) {
         String: StringObj,
         Func: *FuncObj,
-        NativeFn: NativeFn,
+        NativeFn: *NativeObj,
     },
 
     next: ?*Obj,
@@ -139,12 +128,17 @@ pub const FuncObj = struct {
     }
 };
 
-pub const NativeResult = union(enum) {
-    success: Value, failure: StringObj,
-};
+pub const NativeObj = struct {
+    name: []const u8 = "???",
+    impl: Impl,
 
-/// A NativeFn is a lox callable implemented in Zig.
-pub const NativeFn = *const fn(
-    io: std.Io, heap: *Heap, argCount: u8, args: [*]Value,
-) anyerror!NativeResult;
+    pub const NativeResult = union(enum) {
+        success: Value, failure: StringObj,
+    };
+
+    /// A NativeFn is a lox callable implemented in Zig.
+    pub const Impl = *const fn(
+        io: std.Io, heap: *Heap, argCount: u8, args: [*]Value,
+    ) anyerror!NativeResult;
+};
 

@@ -4,7 +4,7 @@ const value = @import("value.zig");
 const Heap = @import("heap.zig");
 
 const Value = value.Value;
-const NativeResult = value.NativeResult;
+const NativeResult = value.NativeObj.NativeResult;
 
 pub fn clock(io: std.Io, _: *Heap, _: u8, _: [*]Value) anyerror!NativeResult {
     const val = std.Io.Clock.now(.real, io);

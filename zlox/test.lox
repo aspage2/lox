@@ -1,13 +1,10 @@
 
-var z = 1;
 
-fun f(a, b) {
-    return a + b - z;
+fun sumit(x) {
+    if (x == 0) {
+        return x;
+    }
+    return x + sumit(x - 1);
 }
 
-print f(1, 2);
-
-print "hi duue";
-
-print f(1, 2);
-
+print sumit(3);

@@ -213,8 +213,8 @@ pub const Chunk = struct {
             @intFromEnum(OpCode.SetLocal) => return self.byteInstruction("OP_SET_LOCAL", offset),
             @intFromEnum(OpCode.Jump) => return self.jumpInstruction("OP_JUMP", .forward, offset),
             @intFromEnum(OpCode.JumpIfFalse) => return self.jumpInstruction("OP_JUMP_IF_FALSE", .forward, offset),
-            @intFromEnum(OpCode.Loop) => return self.jumpInstruction("OP_LOOP", .backward, self, offset),
-            @intFromEnum(OpCode.Call) => return self.byteInstruction("OP_CALL", self, offset),
+            @intFromEnum(OpCode.Loop) => return self.jumpInstruction("OP_LOOP", .backward, offset),
+            @intFromEnum(OpCode.Call) => return self.byteInstruction("OP_CALL", offset),
             else => {
                 std.debug.print("Unknown opcode: {d}\n", .{inst});
                 return offset + 1;

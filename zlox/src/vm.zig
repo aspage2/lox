@@ -405,7 +405,7 @@ pub const VM = struct {
                                 break :blk;
                             },
                             .NativeFn => |n| {
-                                const result = n(
+                                const result = n.impl(
                                     self.io,
                                     self.heap,
                                     argCount, 
@@ -415,7 +415,10 @@ pub const VM = struct {
                                     return .RuntimeError;
                                 };
                                 switch (result) {
-                                    .success => |v| try self.stackPush(v),
+                                    .success => |v| {
+                                        self.stackSize -= argCount + 1;
+                                        try self.stackPush(v);
+                                    },
                                     .failure => |msg| {
                                         self.runtimeError("Error during native call: {s}", .{msg});
                                         return .RuntimeError;
@@ -484,15 +487,15 @@ pub const VM = struct {
         self.stackReset();
     }
 
-    pub fn defineNative(self: *VM, name: []const u8, func: value.NativeFn) !void {
-        const str = try self.heap.allocateString(name);
-        try self.stackPush(str.asValue());
-        const nativeObj = try self.heap.allocateObject();
-        nativeObj.inst = .{ .NativeFn = func };
-        const val = nativeObj.asValue();
+    pub fn defineNative(self: *VM, comptime name: []const u8, func: value.NativeObj.Impl) !void {
+        const obj = try self.heap.allocateObject();
+        const native = try self.alloc.create(value.NativeObj);
+        native.name = name;
+        native.impl = func;
+        obj.inst = .{.NativeFn = native};
+        const val = obj.asValue();
         try self.stackPush(val);
-        try self.globals.put(self.alloc, str.inst.String, val);
-        _ = try self.stackPop();
+        try self.globals.put(self.alloc, name, val);
         _ = try self.stackPop();
     }
 };
