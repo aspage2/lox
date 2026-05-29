@@ -168,11 +168,17 @@ pub const VM = struct {
             }
             switch (codePtr[frame.ip]) {
                 @intFromEnum(inst.OpCode.Return) => {
-                    // FixMe: Implement return semantics
-                    std.debug.print("Returning value: ", .{});
-                    value.printValue(try self.stackPop());
-                    std.debug.print("\n", .{});
-                    return InterpretResult.Ok;
+                    const result = try self.stackPop();
+                    const df = self.frames.pop().?;
+                    if (self.frames.items.len == 0) {
+                        _ = try self.stackPop();
+                        return .Ok;
+                    }
+                    self.stackSize -= df.function.arity + 1;
+                    try self.stackPush(result);
+                    frame = &self.frames.items[self.frames.items.len - 1];
+                    codePtr = frame.function.chunk.code.items.ptr;
+                    frame.ip += 1;
                 },
                 @intFromEnum(inst.OpCode.Constant) => {
                     const vLoc: usize = @intCast(frame.take_operand(u8));

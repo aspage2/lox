@@ -1,2 +1,13 @@
 
+var z = 1;
+
+fun f(a, b) {
+    return a + b - z;
+}
+
+print f(1, 2);
+
+print "hi duue";
+
+print f(1, 2);
 
