@@ -192,7 +192,7 @@ pub const Chunk = struct {
         switch (inst) {
             @intFromEnum(OpCode.Return) => return simpleInstruction("OP_RETURN", offset),
             @intFromEnum(OpCode.Negate) => return simpleInstruction("OP_NEGATE", offset),
-            @intFromEnum(OpCode.Constant) => return constantInstruction("OP_CONSTANT", self, offset),
+            @intFromEnum(OpCode.Constant) => return self.constantInstruction("OP_CONSTANT", offset),
             @intFromEnum(OpCode.Add) => return simpleInstruction("OP_ADD", offset),
             @intFromEnum(OpCode.Subtract) => return simpleInstruction("OP_SUBTRACT", offset),
             @intFromEnum(OpCode.Multiply) => return simpleInstruction("OP_MULTIPLY", offset),
@@ -206,48 +206,48 @@ pub const Chunk = struct {
             @intFromEnum(OpCode.Greater) => return simpleInstruction("OP_GREATER", offset),
             @intFromEnum(OpCode.Print) => return simpleInstruction("OP_PRINT", offset),
             @intFromEnum(OpCode.Pop) => return simpleInstruction("OP_POP", offset),
-            @intFromEnum(OpCode.DefineGlobal) => return constantInstruction("OP_DEFINE_GLOBAL", self, offset),
-            @intFromEnum(OpCode.GetGlobal) => return constantInstruction("OP_GET_GLOBAL", self, offset),
-            @intFromEnum(OpCode.SetGlobal) => return constantInstruction("OP_SET_GLOBAL", self, offset),
-            @intFromEnum(OpCode.GetLocal) => return byteInstruction("OP_GET_LOCAL", self, offset),
-            @intFromEnum(OpCode.SetLocal) => return byteInstruction("OP_SET_LOCAL", self, offset),
-            @intFromEnum(OpCode.Jump) => return jumpInstruction("OP_JUMP", .forward, self, offset),
-            @intFromEnum(OpCode.JumpIfFalse) => return jumpInstruction("OP_JUMP_IF_FALSE", .forward, self, offset),
-            @intFromEnum(OpCode.Loop) => return jumpInstruction("OP_LOOP", .backward, self, offset),
-            @intFromEnum(OpCode.Call) => return byteInstruction("OP_CALL", self, offset),
+            @intFromEnum(OpCode.DefineGlobal) => return self.constantInstruction("OP_DEFINE_GLOBAL", offset),
+            @intFromEnum(OpCode.GetGlobal) => return self.constantInstruction("OP_GET_GLOBAL", offset),
+            @intFromEnum(OpCode.SetGlobal) => return self.constantInstruction("OP_SET_GLOBAL", offset),
+            @intFromEnum(OpCode.GetLocal) => return self.byteInstruction("OP_GET_LOCAL", offset),
+            @intFromEnum(OpCode.SetLocal) => return self.byteInstruction("OP_SET_LOCAL", offset),
+            @intFromEnum(OpCode.Jump) => return self.jumpInstruction("OP_JUMP", .forward, offset),
+            @intFromEnum(OpCode.JumpIfFalse) => return self.jumpInstruction("OP_JUMP_IF_FALSE", .forward, offset),
+            @intFromEnum(OpCode.Loop) => return self.jumpInstruction("OP_LOOP", .backward, self, offset),
+            @intFromEnum(OpCode.Call) => return self.byteInstruction("OP_CALL", self, offset),
             else => {
                 std.debug.print("Unknown opcode: {d}\n", .{inst});
                 return offset + 1;
             },
         }
     }
+    fn simpleInstruction(name: []const u8, offset: usize) usize {
+        std.debug.print("{s}\n", .{name});
+        return offset + 1;
+    }
+
+    fn constantInstruction(chunk: *const Chunk, name: []const u8, offset: usize) usize {
+        const valueLoc: usize = @intCast(chunk.code.items[offset + 1]);
+        std.debug.print("{s:<16} {d:>4} ", .{ name, valueLoc });
+        value.printValue(chunk.constants.items[valueLoc]);
+        std.debug.print("\n", .{});
+        return offset + 2;
+    }
+
+    fn byteInstruction(chunk: *const Chunk, name: []const u8, offset: usize) usize {
+        const val: usize = @intCast(chunk.code.items[offset + 1]);
+        std.debug.print("{s:<16} {d:>4}\n", .{ name, val });
+        return offset + 2;
+    }
+
+    fn jumpInstruction(chunk: *const Chunk, name: []const u8, dir: enum { forward, backward }, offset: usize) usize {
+        const jump = std.mem.readInt(u16, @ptrCast(chunk.code.items[offset + 1 .. offset + 3]), .little);
+        const newOffset = switch (dir) {
+            .forward => offset + 3 + jump,
+            .backward => offset + 3 - jump,
+        };
+        std.debug.print("{s:<16} {d:>4} -> {d}\n", .{ name, offset, newOffset });
+        return offset + 3;
+    }
 };
 
-fn simpleInstruction(name: []const u8, offset: usize) usize {
-    std.debug.print("{s}\n", .{name});
-    return offset + 1;
-}
-
-fn constantInstruction(name: []const u8, chunk: *const Chunk, offset: usize) usize {
-    const valueLoc: usize = @intCast(chunk.code.items[offset + 1]);
-    std.debug.print("{s:<16} {d:>4} ", .{ name, valueLoc });
-    value.printValue(chunk.constants.items[valueLoc]);
-    std.debug.print("\n", .{});
-    return offset + 2;
-}
-
-fn byteInstruction(name: []const u8, chunk: *const Chunk, offset: usize) usize {
-    const val: usize = @intCast(chunk.code.items[offset + 1]);
-    std.debug.print("{s:<16} {d:>4}\n", .{ name, val });
-    return offset + 2;
-}
-
-fn jumpInstruction(name: []const u8, dir: enum { forward, backward }, chunk: *const Chunk, offset: usize) usize {
-    const jump = std.mem.readInt(u16, @ptrCast(chunk.code.items[offset + 1 .. offset + 3]), .little);
-    const newOffset = switch (dir) {
-        .forward => offset + 3 + jump,
-        .backward => offset + 3 - jump,
-    };
-    std.debug.print("{s:<16} {d:>4} -> {d}\n", .{ name, offset, newOffset });
-    return offset + 3;
-}
