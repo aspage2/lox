@@ -241,8 +241,10 @@ fn funDeclaration(self: *Parser) anyerror!void {
 }
 
 fn function(self: *Parser, typ: Compiler.FuncType) !void {
-    var newCompiler: Compiler = try .init(self.alloc, typ, self.compiler);
+    const compilingFunc = try self.heap.newFunction();
+    var newCompiler: Compiler = try .init(typ, compilingFunc, self.compiler);
     self.compiler = &newCompiler;
+
     // Assign the name of the function
     if (typ != .Script) {
         self.compiler.function.name = try self.heap.strings.make(self.previous.data);
@@ -268,9 +270,7 @@ fn function(self: *Parser, typ: Compiler.FuncType) !void {
     try self.block();
 
     const func = try self.endCompiler();
-    const o = try self.heap.allocateObject();
-    o.inst = .{.Func = func};
-    const f = try self.makeConstant(o.asValue());
+    const f = try self.makeConstant(.{ .Obj = .{ .Func = func } });
     try self.emitTwo(.Constant, f);
 }
 
@@ -296,7 +296,7 @@ fn parseVariable(self: *Parser, comptime errMsg: []const u8) !u8 {
 
 fn identifierConstant(self: *Parser, tok: Token) !u8 {
     const sobj = try self.heap.allocateString(tok.data);
-    return try self.makeConstant(sobj.asValue());
+    return try self.makeConstant(.{ .Obj = .{ .String = sobj } });
 }
 
 fn defineVariable(self: *Parser, loc: u8) !void {
@@ -543,7 +543,7 @@ fn grouping(self: *Parser, _: bool) !void {
 
 fn string(self: *Parser, _: bool) !void {
     const sobj = try self.heap.allocateString(self.previous.data);
-    try self.emitConstant(sobj.asValue());
+    try self.emitConstant(.{ .Obj = .{ .String = sobj } });
 }
 
 fn variable(self: *Parser, canParse: bool) !void {
@@ -736,11 +736,12 @@ pub fn endCompiler(self: *Parser) !*value.FuncObj {
 pub fn compile(
     alloc: std.mem.Allocator,
     source: []const u8,
-    st: *Heap,
+    heap: *Heap,
 ) !?*value.FuncObj {
     var sc: Scanner = .init(source);
-    var comp: Compiler = try .init(alloc, .Script, null);
-    var parser: Parser = .init(alloc, &sc, st, &comp);
+    const func = try heap.newFunction();
+    var comp: Compiler = try .init(.Script, func, null);
+    var parser: Parser = .init(alloc, &sc, heap, &comp);
 
     parser.advance();
 

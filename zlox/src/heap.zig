@@ -44,7 +44,7 @@ pub fn newFunction(self: *Heap) !*value.FuncObj {
     try self.objects.append(self.alloc, .{ .Func = func });
     func.name = null;
     func.arity = 0;
-    func.chunk = .init(self.alloc);
+    func.chunk = try .init(self.alloc);
     return func;
 }
 
@@ -59,10 +59,10 @@ pub fn newNative(self: *Heap, comptime name: []const u8, comptime impl: value.Na
 pub fn takeString(self: *Heap, alloc: std.mem.Allocator, data: []const u8) !value.StringObj {
     if (self.strings.tbl.getKey(data)) |k| {
         if (data.ptr == k.ptr and data.len == k.len) {
-            return .{ .String = data };
+            return data;
         }
         alloc.free(data);
-        return .{ .String = k };
+        return k;
     }
     const ret = try self.allocateString(data);
     alloc.free(data);

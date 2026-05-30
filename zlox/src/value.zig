@@ -57,7 +57,7 @@ pub fn printValue(val: Value) void {
 }
 
 pub fn printObject(obj: Obj) void {
-    switch (obj.inst) {
+    switch (obj) {
         .String => |s| std.debug.print("\"{s}\"", .{s}),
         .Func => |f| f.print(),
         .NativeFn => |n| std.debug.print("<native {s}>", .{n.name}),
@@ -76,13 +76,13 @@ pub const Obj = union(Obj.Type) {
     NativeFn: *NativeObj,
 
     fn equals(self: Obj, other: Obj) bool {
-        switch (self.inst) {
-            .String => |s| return std.mem.eql(u8, s, other.inst.String),
+        switch (self) {
+            .String => |s| return std.mem.eql(u8, s, other.String),
             else => return false,
         }
     }
 
-    pub fn asValue(self: *Obj) Value {
+    pub fn asValue(self: Obj) Value {
         return .{ .Obj = self };
     }
 };
@@ -97,10 +97,6 @@ pub const FuncObj = struct {
     arity: u8,
     chunk: inst.Chunk,
     name: ?StringObj,
-
-    pub fn sentinelFunction(alloc: std.mem.Allocator) !*FuncObj {
-        return FuncObj.init(alloc, null, 0);
-    }
 
     pub fn init(alloc: std.mem.Allocator, name: ?StringObj, arity: u8) !*FuncObj {
         const ret = try alloc.create(FuncObj);

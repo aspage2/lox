@@ -53,7 +53,7 @@ const CallFrame = struct {
             value.StringObj => {
                 self.ip += 1;
                 const idx = code.items.ptr[self.ip];
-                return constants.items.ptr[idx].Obj.inst.String;
+                return constants.items.ptr[idx].Obj.String;
             },
             else => @panic("unsupported type"),
         }
@@ -120,19 +120,19 @@ pub const VM = struct {
 
     pub fn interpret(self: *VM, source: []const u8) !InterpretResult {
 
-        const func = try compile(self.alloc, source, self.heap);
-        if (func == null) return .CompileError;
+        const func = try compile(self.alloc, source, self.heap)
+            orelse return .CompileError;
+
         if (build_opts.lox_debug) {
             std.debug.print("\x1b[2;37m", .{});
             self.heap.strings.pprint();
             std.debug.print("\x1b[0m", .{});
         }
-        const o = try self.heap.allocateObject();
-        o.inst = .{.Func = func.?};
-        try self.stackPush(o.asValue());
+
+        try self.stackPush(.{ .Obj = .{ .Func = func } });
 
         const frame = self.frames.addOneAssumeCapacity();
-        frame.function = func.?;
+        frame.function = func;
         frame.ip = 0;
         frame.slots = &self.stack;
 
@@ -216,8 +216,8 @@ pub const VM = struct {
                                 self.runtimeError("Operands for concat must be strings", .{});
                                 return InterpretResult.RuntimeError;
                             };
-                            const boType = std.meta.activeTag(bo.inst);
-                            const aoType = std.meta.activeTag(ao.inst);
+                            const boType = std.meta.activeTag(bo);
+                            const aoType = std.meta.activeTag(ao);
                             if (boType != aoType or boType != .String) {
                                 self.runtimeError("Operands for concat must be strings", .{});
                                 return InterpretResult.RuntimeError;
@@ -226,12 +226,11 @@ pub const VM = struct {
                             const newData = try std.mem.concat(
                                 self.alloc,
                                 u8,
-                                &.{ ao.inst.String, bo.inst.String },
+                                &.{ ao.String, bo.String },
                             );
                             defer self.alloc.free(newData);
-                            try self.stackPush(
-                                (try self.heap.takeString(self.alloc, newData)).asValue()
-                            );
+                            const s = try self.heap.takeString(self.alloc, newData);
+                            try self.stackPush(.{.Obj = .{ .String = s } });
                         },
                         else => unreachable,
                     }
@@ -395,7 +394,7 @@ pub const VM = struct {
                     const argCount = frame.take_operand(u8);
                     const val = self.stackPeek(argCount).?;
                     switch (val) {
-                        .Obj => |o| switch(o.inst) {
+                        .Obj => |o| switch(o) {
                             .Func => |f| {
                                 if (!self.call(f, argCount)) {
                                     return .RuntimeError;
@@ -487,13 +486,9 @@ pub const VM = struct {
         self.stackReset();
     }
 
-    pub fn defineNative(self: *VM, comptime name: []const u8, func: value.NativeObj.Impl) !void {
-        const obj = try self.heap.allocateObject();
-        const native = try self.alloc.create(value.NativeObj);
-        native.name = name;
-        native.impl = func;
-        obj.inst = .{.NativeFn = native};
-        const val = obj.asValue();
+    pub fn defineNative(self: *VM, comptime name: []const u8, comptime func: value.NativeObj.Impl) !void {
+        const no = value.Obj{.NativeFn = try self.heap.newNative(name, func)};
+        const val: value.Value = no.asValue();
         try self.stackPush(val);
         try self.globals.put(self.alloc, name, val);
         _ = try self.stackPop();

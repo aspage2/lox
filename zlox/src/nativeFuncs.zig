@@ -21,19 +21,22 @@ pub fn toString(_: std.Io, heap: *Heap, argc: u8, argv: [*]Value) anyerror!Nativ
             var buf: [128]u8 = undefined;
             const rendered = try std.fmt.float.render(&buf, f, .{});
             const ret = try heap.allocateString(rendered);
-            return .{.success = ret.asValue()};
+            const obj: value.Obj = .{ .String = ret };
+            return .{.success = obj.asValue()};
         },
         .Bool => |b| {
             const ret = try heap.allocateString(if (b) "true" else "false");
-            return .{.success = ret.asValue()};
+            const obj: value.Obj = .{ .String = ret };
+            return .{.success = obj.asValue()};
         },
         .Nil => {
             const ret = heap.allocateString("NIL")
                 catch @panic("out of memory");
-            return .{.success = ret.asValue()};
+            const obj: value.Obj = .{ .String = ret };
+            return .{.success = obj.asValue()};
         },
         .Obj => |o| {
-            switch (o.inst) {
+            switch (o) {
                 .String => return .{.success = argv[0]},
                 .Func => |f| {
                     if (f.name) |n| {
@@ -41,15 +44,18 @@ pub fn toString(_: std.Io, heap: *Heap, argc: u8, argv: [*]Value) anyerror!Nativ
                         var wr = std.Io.Writer.fixed(&buf);
                         try wr.print("<function {s}>", .{n});
                         const ret = try heap.allocateString(wr.buffered());
-                        return .{.success = ret.asValue()};
+                        const obj: value.Obj = .{ .String = ret };
+                        return .{.success = obj.asValue()};
                     } else {
                         const ret = try heap.allocateString("<script>");
-                        return .{.success = ret.asValue()};
+                        const obj: value.Obj = .{ .String = ret };
+                        return .{.success = obj.asValue()};
                     }
                 },
                 .NativeFn => {
                     const ret = try heap.allocateString("<native function>");
-                    return .{.success = ret.asValue()};
+                    const obj: value.Obj = .{ .String = ret };
+                    return .{.success = obj.asValue()};
                 },
             }
         },

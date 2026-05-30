@@ -38,11 +38,11 @@ funcType: FuncType,
 
 pub const FuncType = enum { Script, Func };
 
-pub fn init(alloc: std.mem.Allocator, funcType: FuncType, enclosing: ?*Compiler) !Compiler {
+pub fn init(funcType: FuncType, func: *value.FuncObj, enclosing: ?*Compiler) !Compiler {
     var ret: Compiler = .{.funcType = funcType, .enclosing = enclosing};
     ret.locals = .initBuffer(&ret.localBuffer);
     ret.scopeDepth = 0;
-    ret.function = try value.FuncObj.sentinelFunction(alloc);
+    ret.function = func;
 
     const local = ret.locals.addOneAssumeCapacity();
     local.depth = 0;
