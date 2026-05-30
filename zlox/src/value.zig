@@ -2,7 +2,6 @@ const inst = @import("inst.zig");
 const Heap = @import("heap.zig");
 const std = @import("std");
 
-
 const ValType = enum {
     Bool,
     Number,
@@ -14,7 +13,7 @@ pub const Value = union(ValType) {
     Bool: bool,
     Number: f32,
     Nil: void,
-    Obj: *Obj,
+    Obj: Obj,
 
     pub fn expectType(self: Value, comptime typ: ValType) ?std.meta.fieldInfo(Value, typ).type {
         return switch (self) {
@@ -57,7 +56,7 @@ pub fn printValue(val: Value) void {
     }
 }
 
-pub fn printObject(obj: *const Obj) void {
+pub fn printObject(obj: Obj) void {
     switch (obj.inst) {
         .String => |s| std.debug.print("\"{s}\"", .{s}),
         .Func => |f| f.print(),
@@ -66,21 +65,17 @@ pub fn printObject(obj: *const Obj) void {
 }
 
 /// Obj is a wrapper type for heap-allocated objects.
-pub const Obj = struct {
+pub const Obj = union(Obj.Type) {
     const Type = enum(u8) {
         String,
         Func,
         NativeFn,
     };
-    inst: union(Type) {
-        String: StringObj,
-        Func: *FuncObj,
-        NativeFn: *NativeObj,
-    },
+    String: StringObj,
+    Func: *FuncObj,
+    NativeFn: *NativeObj,
 
-    next: ?*Obj,
-
-    fn equals(self: *Obj, other: *Obj) bool {
+    fn equals(self: Obj, other: Obj) bool {
         switch (self.inst) {
             .String => |s| return std.mem.eql(u8, s, other.inst.String),
             else => return false,

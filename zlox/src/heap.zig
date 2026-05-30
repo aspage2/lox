@@ -5,44 +5,64 @@ const value = @import("value.zig");
 
 const Heap = @This();
 
-objArena: std.heap.ArenaAllocator = undefined,
-objAlloc: std.mem.Allocator = undefined,
+alloc: std.mem.Allocator,
+objects: std.ArrayList(value.Obj),
 strings: StringTable = undefined,
 
-pub fn init(parent: std.mem.Allocator) !*Heap {
-    var ret: *Heap = try parent.create(Heap);
-    ret.objArena = .init(parent);
-    ret.objAlloc = ret.objArena.allocator();
-    ret.strings = try .init(parent);
+pub fn init(alloc: std.mem.Allocator) !*Heap {
+    var ret: *Heap = try alloc.create(Heap);
+    ret.alloc = alloc;
+    ret.objects = try .initCapacity(alloc, 16);
+    ret.strings = try .init(alloc);
     return ret;
 }
 
 pub fn deinit(self: *Heap) void {
-    self.objArena.deinit();
+    for (self.objects.items) |o| switch (o) {
+        .Func => |f| {
+            f.deinit();
+            self.alloc.destroy(f);
+        },
+        .NativeFn => |n| {
+            self.alloc.destroy(n);
+        },
+        else => {
+            std.debug.print("Not cleaning it up\n", .{});
+        },
+    };
     self.strings.deinit();
 }
 
-pub fn allocateObject(self: *Heap) !*value.Obj {
-    return try self.objAlloc.create(value.Obj);
+pub fn allocateString(self: *Heap, data: []const u8) !value.StringObj {
+    const s = try self.strings.make(data);
+    try self.objects.append(self.alloc, .{ .String = s });
+    return s;
 }
 
-pub fn allocateString(self: *Heap, data: []const u8) !*value.Obj {
-    const o = try self.allocateObject();
-    o.inst = .{.String = try self.strings.make(data)};
-    return o;
+pub fn newFunction(self: *Heap) !*value.FuncObj {
+    const func = try self.alloc.create(value.FuncObj);
+    try self.objects.append(self.alloc, .{ .Func = func });
+    func.name = null;
+    func.arity = 0;
+    func.chunk = .init(self.alloc);
+    return func;
 }
 
-pub fn takeString(self: *Heap, alloc: std.mem.Allocator, data: []const u8) !*value.Obj {
+pub fn newNative(self: *Heap, comptime name: []const u8, comptime impl: value.NativeObj.Impl) !*value.NativeObj {
+    const n = try self.alloc.create(value.NativeObj);
+    n.name = name;
+    n.impl = impl;
+    try self.objects.append(self.alloc, .{ .NativeFn = n});
+    return n;
+}
+
+pub fn takeString(self: *Heap, alloc: std.mem.Allocator, data: []const u8) !value.StringObj {
     if (self.strings.tbl.getKey(data)) |k| {
         if (data.ptr == k.ptr and data.len == k.len) {
-            const o = try self.allocateObject();
-            o.inst = .{ .String = data };
-            return o;
+            return .{ .String = data };
         }
         alloc.free(data);
-        const o = try self.allocateObject();
-        o.inst = .{ .String = k };
-        return o;
+        return .{ .String = k };
     }
     const ret = try self.allocateString(data);
     alloc.free(data);
