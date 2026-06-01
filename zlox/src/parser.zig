@@ -242,7 +242,8 @@ fn funDeclaration(self: *Parser) anyerror!void {
 
 fn function(self: *Parser, typ: Compiler.FuncType) !void {
     const compilingFunc = try self.heap.newFunction();
-    var newCompiler: Compiler = try .init(typ, compilingFunc, self.compiler);
+    var newCompiler: Compiler = undefined; 
+    newCompiler.init(typ, compilingFunc, self.compiler);
     self.compiler = &newCompiler;
 
     // Assign the name of the function
@@ -270,8 +271,15 @@ fn function(self: *Parser, typ: Compiler.FuncType) !void {
     try self.block();
 
     const func = try self.endCompiler();
+    
     const f = try self.makeConstant(.{ .Obj = .{ .Func = func } });
-    try self.emitTwo(.Constant, f);
+    try self.emitTwo(.Closure, f);
+
+    for (0..func.upvalueCount) |i| {
+        const uv = newCompiler.upvalues.items[i];
+        try self.emitByte(if (uv.isLocal) 1 else 0);
+        try self.emitByte(uv.index);
+    }
 }
 
 fn varDeclaration(self: *Parser) !void {
@@ -550,6 +558,7 @@ fn variable(self: *Parser, canParse: bool) !void {
     return self.namedVariable(self.previous, canParse);
 }
 
+
 fn namedVariable(self: *Parser, name: Token, canParse: bool) !void {
     var getOp: inst.OpCode = undefined;
     var setOp: inst.OpCode = undefined;
@@ -559,6 +568,10 @@ fn namedVariable(self: *Parser, name: Token, canParse: bool) !void {
             arg = a;
             getOp = .GetLocal;
             setOp = .SetLocal;
+        } else if (try self.compiler.resolveUpValue(name)) |u| {
+           arg = u;
+           getOp = .GetUpValue;
+           setOp = .SetUpValue;
         } else {
             arg = try self.identifierConstant(name);
             getOp = .GetGlobal;
@@ -740,7 +753,8 @@ pub fn compile(
 ) !?*value.FuncObj {
     var sc: Scanner = .init(source);
     const func = try heap.newFunction();
-    var comp: Compiler = try .init(.Script, func, null);
+    var comp: Compiler = undefined;
+    comp.init(.Script, func, null);
     var parser: Parser = .init(alloc, &sc, heap, &comp);
 
     parser.advance();

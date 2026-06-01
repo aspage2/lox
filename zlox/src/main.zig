@@ -5,6 +5,8 @@ const zlox = @import("zlox");
 
 const inst = @import("inst.zig");
 const vm = @import("vm.zig");
+const Heap = @import("heap.zig");
+const build_opts = @import("build_options");
 
 test {
     std.testing.refAllDecls(@This());
@@ -28,6 +30,26 @@ pub fn main(init: std.process.Init) !void {
             try std.Io.Dir.cwd().openFile(init.io, argv[1], .{ .mode = .read_only }),
             init.io,
         ),
+        3 => {
+            if (std.mem.eql(u8, argv[1], "compile")) {
+                const file = try std.Io.Dir.cwd().openFile(init.io, argv[2], .{ .mode = .read_only });
+                var buf: [1024]u8 = undefined;
+                var rd = file.reader(init.io, buf[0..]);
+                const fileSize = try file.length(init.io);
+                const source = try rd.interface.readAlloc(arena, fileSize);
+                const hp: *Heap = try .init(arena); 
+                const func = try @import("parser.zig").compile(arena, source, hp)
+                    orelse std.process.exit(1);
+                try func.chunk.disassemble("Script");
+
+                std.debug.print("--- String Table ---", .{});
+                hp.strings.pprint();
+
+            } else {
+                std.debug.print("Usage: ./lox compile [FNAME]", .{});
+                std.process.exit(1);
+            }
+        },
 
         else => {
             std.debug.print("Usage: ./main [file]", .{});

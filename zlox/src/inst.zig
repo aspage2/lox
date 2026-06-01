@@ -60,8 +60,11 @@ pub const OpCode = enum(u8) {
     JumpIfFalse,
     Loop,
 
-    // Function calls
+    // Function calls & Closures
     Call,
+    Closure,
+    GetUpValue,
+    SetUpValue,
 };
 
 pub const InstructionError = error{
@@ -180,7 +183,8 @@ pub const Chunk = struct {
         }
     }
 
-    pub fn disassembleInstruction(self: *const Chunk, offset: usize) !usize {
+    pub fn disassembleInstruction(self: *const Chunk, off: usize) !usize {
+        var offset = off;
         std.debug.print("{:0>4} ", .{offset});
         const line = try self.getLine(offset);
         if (offset > 0 and line == try self.getLine(offset - 1)) {
@@ -215,6 +219,32 @@ pub const Chunk = struct {
             @intFromEnum(OpCode.JumpIfFalse) => return self.jumpInstruction("OP_JUMP_IF_FALSE", .forward, offset),
             @intFromEnum(OpCode.Loop) => return self.jumpInstruction("OP_LOOP", .backward, offset),
             @intFromEnum(OpCode.Call) => return self.byteInstruction("OP_CALL", offset),
+            @intFromEnum(OpCode.Closure) => {
+                offset += 1;
+                const cLoc = self.code.items[offset];
+                offset += 1;
+                std.debug.print("{s:<16} {d:>4} ", .{ "OP_CLOSURE", cLoc });
+                const c = self.constants.items[cLoc];
+                value.printValue(c);
+                std.debug.print("\n", .{});
+                const f = c.Obj.Func;
+                for (0..f.upvalueCount) |_| {
+                    const typ = switch (self.code.items[offset]) {
+                        1 => "local",
+                        else => "upvalue",
+                    };
+                    offset += 1;
+                    const idx = self.code.items[offset];
+                    offset += 1;
+                    std.debug.print(
+                        "{d:>4}     |                {s} {d}\n",
+                        .{offset - 2, typ, idx},
+                    );
+                }
+                return offset;
+            },
+            @intFromEnum(OpCode.GetUpValue) => return self.byteInstruction("OP_GET_UPVALUE", offset),
+            @intFromEnum(OpCode.SetUpValue) => return self.byteInstruction("OP_SET_UPVALUE", offset),
             else => {
                 std.debug.print("Unknown opcode: {d}\n", .{inst});
                 return offset + 1;

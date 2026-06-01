@@ -26,6 +26,7 @@ pub fn deinit(self: *Heap) void {
         .NativeFn => |n| {
             self.alloc.destroy(n);
         },
+        .Closure => |c| self.alloc.destroy(c),
         else => {
             std.debug.print("Not cleaning it up\n", .{});
         },
@@ -45,6 +46,7 @@ pub fn newFunction(self: *Heap) !*value.FuncObj {
     func.name = null;
     func.arity = 0;
     func.chunk = try .init(self.alloc);
+    func.upvalueCount = 0;
     return func;
 }
 
@@ -67,6 +69,13 @@ pub fn takeString(self: *Heap, alloc: std.mem.Allocator, data: []const u8) !valu
     const ret = try self.allocateString(data);
     alloc.free(data);
     return ret;
+}
+
+pub fn newClosure(self: *Heap, func: *value.FuncObj) !*value.ClosureObj {
+    const closure = try self.alloc.create(value.ClosureObj);
+    closure.function = func;
+    try self.objects.append(self.alloc, .{.Closure=closure});
+    return closure;
 }
 
 pub const StringTable = struct {

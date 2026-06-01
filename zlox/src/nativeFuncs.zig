@@ -52,6 +52,21 @@ pub fn toString(_: std.Io, heap: *Heap, argc: u8, argv: [*]Value) anyerror!Nativ
                         return .{.success = obj.asValue()};
                     }
                 },
+                .Closure => |c| {
+                    const f = c.function;
+                    if (f.name) |n| {
+                        var buf: [256]u8 = undefined;
+                        var wr = std.Io.Writer.fixed(&buf);
+                        try wr.print("<function {s}>", .{n});
+                        const ret = try heap.allocateString(wr.buffered());
+                        const obj: value.Obj = .{ .String = ret };
+                        return .{.success = obj.asValue()};
+                    } else {
+                        const ret = try heap.allocateString("<script>");
+                        const obj: value.Obj = .{ .String = ret };
+                        return .{.success = obj.asValue()};
+                    }
+                },
                 .NativeFn => {
                     const ret = try heap.allocateString("<native function>");
                     const obj: value.Obj = .{ .String = ret };

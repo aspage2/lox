@@ -58,9 +58,13 @@ pub fn printValue(val: Value) void {
 
 pub fn printObject(obj: Obj) void {
     switch (obj) {
-        .String => |s| std.debug.print("\"{s}\"", .{s}),
+        .String => |s| std.debug.print("{s}", .{s}),
         .Func => |f| f.print(),
         .NativeFn => |n| std.debug.print("<native {s}>", .{n.name}),
+        .Closure => |c| if (c.function.name) |n| 
+            std.debug.print("<closure {s}>", .{n})
+        else
+            std.debug.print("<script>", .{}),
     }
 }
 
@@ -70,10 +74,12 @@ pub const Obj = union(Obj.Type) {
         String,
         Func,
         NativeFn,
+        Closure,
     };
     String: StringObj,
     Func: *FuncObj,
     NativeFn: *NativeObj,
+    Closure: *ClosureObj,
 
     fn equals(self: Obj, other: Obj) bool {
         switch (self) {
@@ -97,14 +103,7 @@ pub const FuncObj = struct {
     arity: u8,
     chunk: inst.Chunk,
     name: ?StringObj,
-
-    pub fn init(alloc: std.mem.Allocator, name: ?StringObj, arity: u8) !*FuncObj {
-        const ret = try alloc.create(FuncObj);
-        ret.arity = arity;
-        ret.name = name;
-        ret.chunk = try .init(alloc);
-        return ret;
-    }
+    upvalueCount: usize = 0,
 
     pub fn deinit(self: *FuncObj) void {
         self.chunk.deinit();
@@ -131,5 +130,12 @@ pub const NativeObj = struct {
     pub const Impl = *const fn(
         io: std.Io, heap: *Heap, argCount: u8, args: [*]Value,
     ) anyerror!NativeResult;
+};
+
+
+// Closures
+
+pub const ClosureObj = struct {
+    function: *FuncObj,
 };
 

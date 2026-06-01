@@ -7,6 +7,11 @@ const value = @import("value.zig");
 
 const Compiler = @This();
 
+pub const UpValue = struct {
+    index: u8,
+    isLocal: bool,
+};
+
 /// A stack entry.
 pub const Local = struct {
     /// The token where this name was first seen
@@ -29,6 +34,8 @@ enclosing: ?*Compiler,
 /// The book has us using a fixed buffer for the stack.
 localBuffer: [std.math.maxInt(u8)]Local = undefined,
 locals: std.ArrayList(Local) = undefined,
+upvalueBuffer: [std.math.maxInt(u8)]UpValue = undefined,
+upvalues: std.ArrayList(UpValue) = undefined,
 
 /// Scope depth of 0 represents the global scope.
 scopeDepth: usize = 0,
@@ -38,16 +45,17 @@ funcType: FuncType,
 
 pub const FuncType = enum { Script, Func };
 
-pub fn init(funcType: FuncType, func: *value.FuncObj, enclosing: ?*Compiler) !Compiler {
-    var ret: Compiler = .{.funcType = funcType, .enclosing = enclosing};
-    ret.locals = .initBuffer(&ret.localBuffer);
-    ret.scopeDepth = 0;
-    ret.function = func;
+pub fn init(compiler: *Compiler, funcType: FuncType, func: *value.FuncObj, enclosing: ?*Compiler) void {
+    compiler.funcType = funcType;
+    compiler.enclosing = enclosing;
+    compiler.locals = .initBuffer(&compiler.localBuffer);
+    compiler.upvalues = .initBuffer(&compiler.upvalueBuffer);
+    compiler.scopeDepth = 0;
+    compiler.function = func;
 
-    const local = ret.locals.addOneAssumeCapacity();
+    const local = compiler.locals.addOneAssumeCapacity();
     local.depth = 0;
     local.name = .{ .data = "", .type = .Error, .line = 1 };
-    return ret;
 }
 
 /// After a local's initializer is parsed, it is marked "initialized"
@@ -92,6 +100,7 @@ pub fn resolveLocal(self: *Compiler, name: Token) error{SelfReferentialLocal}!?u
     while (i > 0) : (i -= 1) {
         const pos = i - 1;
         const local = self.locals.items[pos];
+        std.debug.print("{s} {d}\n", .{local.name.data, local.depth orelse 1000});
         if (std.mem.eql(u8, name.data, local.name.data)) {
             // capture var a = a;
             _ = local.depth orelse
@@ -101,4 +110,42 @@ pub fn resolveLocal(self: *Compiler, name: Token) error{SelfReferentialLocal}!?u
         }
     }
     return null;
+}
+
+pub fn resolveUpValue(self: *Compiler, name: Token) !?u8 {
+    std.debug.print("{s}: RESOLVE UPVALUE {s}\n", .{self.function.name orelse "script", name.data});
+    const parentCompiler = self.enclosing orelse return null;
+    if (try parentCompiler.resolveLocal(name)) |local| {
+        return try self.addUpValue(local, true);
+    }
+    if (try parentCompiler.resolveUpValue(name)) |uv| {
+        return try self.addUpValue(uv, false);
+    }
+    return null;
+}
+
+pub fn addUpValue(self: *Compiler, loc: u8, isLocal: bool) !u8 {
+    // First, check for an existing upvalue for this local.
+    for (self.upvalues.items, 0..) |uv, i| {
+        if (uv.index == loc and uv.isLocal == isLocal)
+            return @intCast(i);
+    }
+    const l = self.upvalues.items.len;
+    const u = try self.upvalues.addOneBounded();
+    self.function.upvalueCount += 1;
+    u.index = loc;
+    u.isLocal = isLocal;
+    // Return index of new upvalue
+    return @intCast(l);
+}
+
+pub fn printLocals(self: *Compiler) void {
+    std.debug.print("--- LOCALS {s} ---\n", .{self.function.name orelse "<script>"});
+    for (self.locals.items) |l| {
+        if (l.depth) |d| {
+            std.debug.print("{s} {d}\n", .{l.name.data, d});
+        } else {
+            std.debug.print("{s} <uninitialized>\n", .{l.name.data});
+        }
+    }
 }

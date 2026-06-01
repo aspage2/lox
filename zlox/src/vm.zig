@@ -4,7 +4,7 @@ const inst = @import("inst.zig");
 const value = @import("value.zig");
 const Heap = @import("heap.zig");
 
-const compile = @import("parser.zig").compile;
+const parser = @import("parser.zig");
 
 const nativeFns = @import("nativeFuncs.zig");
 
@@ -27,12 +27,12 @@ const FramesMax: usize = 64;
 const StackMax: usize = (std.math.maxInt(u8) + 1) * 64;
 
 const CallFrame = struct {
-    function: *value.FuncObj,
+    closure: *value.ClosureObj,
     ip: usize,
     slots: [*]value.Value,
     
     fn take_operand(self: *CallFrame, comptime T: type) T {
-        const chunk = self.function.chunk;
+        const chunk = self.closure.function.chunk;
         const code = chunk.code;
         const constants = chunk.constants;
         switch (T) {
@@ -54,6 +54,11 @@ const CallFrame = struct {
                 self.ip += 1;
                 const idx = code.items.ptr[self.ip];
                 return constants.items.ptr[idx].Obj.String;
+            },
+            *value.FuncObj => {
+                self.ip += 1;
+                const idx = code.items.ptr[self.ip];
+                return constants.items.ptr[idx].Obj.Func;
             },
             else => @panic("unsupported type"),
         }
@@ -120,7 +125,7 @@ pub const VM = struct {
 
     pub fn interpret(self: *VM, source: []const u8) !InterpretResult {
 
-        const func = try compile(self.alloc, source, self.heap)
+        const func = try parser.compile(self.alloc, source, self.heap)
             orelse return .CompileError;
 
         if (build_opts.lox_debug) {
@@ -132,7 +137,11 @@ pub const VM = struct {
         try self.stackPush(.{ .Obj = .{ .Func = func } });
 
         const frame = self.frames.addOneAssumeCapacity();
-        frame.function = func;
+        const closure = try self.heap.newClosure(func);
+        // Pop function obj
+        _ = try self.stackPop();
+        try self.stackPush(.{ .Obj = .{ .Closure = closure } });
+        frame.closure = closure;
         frame.ip = 0;
         frame.slots = &self.stack;
 
@@ -151,9 +160,9 @@ pub const VM = struct {
 
     fn run(self: *VM) !InterpretResult {
         var frame = &self.frames.items[self.frames.items.len-1];
-        var codePtr: [*]u8 = frame.function.chunk.code.items.ptr;
+        var codePtr: [*]u8 = frame.closure.function.chunk.code.items.ptr;
 
-        while (frame.ip < frame.function.chunk.len()) {
+        while (frame.ip < frame.closure.function.chunk.len()) {
             if (comptime build_opts.lox_debug) {
                 std.debug.print("\x1b[2;37m", .{});
                 std.debug.print("          ", .{});
@@ -163,7 +172,7 @@ pub const VM = struct {
                     std.debug.print(" ]", .{});
                 }
                 std.debug.print("\n", .{});
-                _ = try frame.function.chunk.disassembleInstruction(frame.ip);
+                _ = try frame.closure.function.chunk.disassembleInstruction(frame.ip);
                 std.debug.print("\x1b[0m", .{});
             }
             switch (codePtr[frame.ip]) {
@@ -174,15 +183,15 @@ pub const VM = struct {
                         _ = try self.stackPop();
                         return .Ok;
                     }
-                    self.stackSize -= df.function.arity + 1;
+                    self.stackSize -= df.closure.function.arity + 1;
                     try self.stackPush(result);
                     frame = &self.frames.items[self.frames.items.len - 1];
-                    codePtr = frame.function.chunk.code.items.ptr;
+                    codePtr = frame.closure.function.chunk.code.items.ptr;
                     frame.ip += 1;
                 },
                 @intFromEnum(inst.OpCode.Constant) => {
                     const vLoc: usize = @intCast(frame.take_operand(u8));
-                    const val = frame.function.chunk.constants.items[vLoc];
+                    const val = frame.closure.function.chunk.constants.items[vLoc];
                     try self.stackPush(val);
                     frame.ip += 1;
                 },
@@ -395,12 +404,12 @@ pub const VM = struct {
                     const val = self.stackPeek(argCount).?;
                     switch (val) {
                         .Obj => |o| switch(o) {
-                            .Func => |f| {
-                                if (!self.call(f, argCount)) {
+                            .Closure => |c| {
+                                if (!self.call(c, argCount)) {
                                     return .RuntimeError;
                                 }
                                 frame = &self.frames.items[self.frames.items.len-1];
-                                codePtr = frame.function.chunk.code.items.ptr;
+                                codePtr = frame.closure.function.chunk.code.items.ptr;
                                 break :blk;
                             },
                             .NativeFn => |n| {
@@ -434,15 +443,21 @@ pub const VM = struct {
                     self.runtimeError("Attempt to call non-function value {any}", .{val});
                     return .RuntimeError;
                 },
+                @intFromEnum(inst.OpCode.Closure) => {
+                    const f = frame.take_operand(*value.FuncObj);
+                    const c = try self.heap.newClosure(f);
+                    try self.stackPush(.{ .Obj = .{ .Closure = c } });
+                    frame.ip += 1;
+                },
                 else => {},
             }
         }
         return InterpretResult.RuntimeError;
     }
 
-    fn call(self: *VM, func: *value.FuncObj, argCount: u8) bool {
-        if (argCount != func.arity) {
-            self.runtimeError("Expect {d} args, got {d}", .{func.arity, argCount});
+    fn call(self: *VM, closure: *value.ClosureObj, argCount: u8) bool {
+        if (argCount != closure.function.arity) {
+            self.runtimeError("Expect {d} args, got {d}", .{closure.function.arity, argCount});
             return false;
         }
 
@@ -450,7 +465,7 @@ pub const VM = struct {
             self.runtimeError("Stack overflow", .{});
         }
         const newFrame = self.frames.addOneAssumeCapacity();
-        newFrame.function = func;
+        newFrame.closure = closure;
         newFrame.ip = 0;
         newFrame.slots = @as([*]value.Value, &self.stack) + (self.stackSize - 1 - argCount);
 
@@ -467,7 +482,7 @@ pub const VM = struct {
         var i = self.frames.items.len;
         while (i > 0) : (i -= 1) {
             const frame = &self.frames.items[i-1];
-            const chunk = frame.function.chunk;
+            const chunk = frame.closure.function.chunk;
 
             var l: u32 = 0;
             if (chunk.getLine(frame.ip)) |line| {
@@ -476,7 +491,7 @@ pub const VM = struct {
                 std.debug.print("err getting line: {any}\n", .{e});
             }
             std.debug.print("\n[line {d}] in ", .{l});
-            if (frame.function.name) |n| {
+            if (frame.closure.function.name) |n| {
                 std.debug.print("in {s}\n", .{n});
             } else {
                 std.debug.print("script\n", .{});
