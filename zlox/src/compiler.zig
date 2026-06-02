@@ -100,7 +100,6 @@ pub fn resolveLocal(self: *Compiler, name: Token) error{SelfReferentialLocal}!?u
     while (i > 0) : (i -= 1) {
         const pos = i - 1;
         const local = self.locals.items[pos];
-        std.debug.print("{s} {d}\n", .{local.name.data, local.depth orelse 1000});
         if (std.mem.eql(u8, name.data, local.name.data)) {
             // capture var a = a;
             _ = local.depth orelse
@@ -113,7 +112,6 @@ pub fn resolveLocal(self: *Compiler, name: Token) error{SelfReferentialLocal}!?u
 }
 
 pub fn resolveUpValue(self: *Compiler, name: Token) !?u8 {
-    std.debug.print("{s}: RESOLVE UPVALUE {s}\n", .{self.function.name orelse "script", name.data});
     const parentCompiler = self.enclosing orelse return null;
     if (try parentCompiler.resolveLocal(name)) |local| {
         return try self.addUpValue(local, true);

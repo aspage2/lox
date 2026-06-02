@@ -65,6 +65,7 @@ pub fn printObject(obj: Obj) void {
             std.debug.print("<closure {s}>", .{n})
         else
             std.debug.print("<script>", .{}),
+        .Upvalue => std.debug.print("<upvalue>", .{}),
     }
 }
 
@@ -75,11 +76,13 @@ pub const Obj = union(Obj.Type) {
         Func,
         NativeFn,
         Closure,
+        Upvalue,
     };
     String: StringObj,
     Func: *FuncObj,
     NativeFn: *NativeObj,
     Closure: *ClosureObj,
+    Upvalue: *UpvalueObj,
 
     fn equals(self: Obj, other: Obj) bool {
         switch (self) {
@@ -137,5 +140,10 @@ pub const NativeObj = struct {
 
 pub const ClosureObj = struct {
     function: *FuncObj,
+    upvalues: std.ArrayList(*UpvalueObj),
 };
 
+
+pub const UpvalueObj = struct {
+    location: *Value,
+};

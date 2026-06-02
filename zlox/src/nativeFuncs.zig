@@ -67,6 +67,11 @@ pub fn toString(_: std.Io, heap: *Heap, argc: u8, argv: [*]Value) anyerror!Nativ
                         return .{.success = obj.asValue()};
                     }
                 },
+                .Upvalue => {
+                    const ret = try heap.allocateString("<upvalue>");
+                    const obj: value.Obj = .{ .String = ret };
+                    return .{.success = obj.asValue()};
+                },
                 .NativeFn => {
                     const ret = try heap.allocateString("<native function>");
                     const obj: value.Obj = .{ .String = ret };

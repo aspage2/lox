@@ -447,12 +447,41 @@ pub const VM = struct {
                     const f = frame.take_operand(*value.FuncObj);
                     const c = try self.heap.newClosure(f);
                     try self.stackPush(.{ .Obj = .{ .Closure = c } });
+                    for (c.upvalues.items) |*uv| {
+                        const isLocal = frame.take_operand(u8) == 1;
+                        const index = frame.take_operand(u8);
+                        if (isLocal) {
+                            uv.* = try self.captureUpvalue(@ptrCast(frame.slots + index));
+                        } else {
+                            uv.* = frame.closure.upvalues.items[index];
+                        }
+                    }
+                    frame.ip += 1;
+                },
+                @intFromEnum(inst.OpCode.GetUpValue) => {
+                    const slot = frame.take_operand(u8);
+                    const v = frame.closure.upvalues.items[slot].location.*;
+                    try self.stackPush(v);
+                    frame.ip += 1;
+                },
+                @intFromEnum(inst.OpCode.SetUpValue) => {
+                    const slot = frame.take_operand(u8);
+                    frame.closure.upvalues.items[slot].location.* =
+                        self.stackPeek(0) orelse {
+                            self.runtimeError("FATAL: empty stack", .{});
+                            return .RuntimeError;
+                        };
                     frame.ip += 1;
                 },
                 else => {},
             }
         }
         return InterpretResult.RuntimeError;
+    }
+
+    fn captureUpvalue(self: *VM, v: *value.Value) !*value.UpvalueObj {
+        const created = try self.heap.newUpvalue(v);
+        return created;
     }
 
     fn call(self: *VM, closure: *value.ClosureObj, argCount: u8) bool {

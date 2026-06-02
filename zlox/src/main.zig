@@ -41,8 +41,6 @@ pub fn main(init: std.process.Init) !void {
                 const func = try @import("parser.zig").compile(arena, source, hp)
                     orelse std.process.exit(1);
                 try func.chunk.disassemble("Script");
-
-                std.debug.print("--- String Table ---", .{});
                 hp.strings.pprint();
 
             } else {

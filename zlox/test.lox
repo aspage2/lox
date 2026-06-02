@@ -1,14 +1,12 @@
 
 fun outer() {
-    var x = 3;
+    var x = "hello";
 
-    fun what() { 
-        print x + 1; 
+    fun inner() {
+        print x;
     }
-
-    return what;
+    
+    inner();
 }
 
-var f = outer();
-f();
-
+outer();
