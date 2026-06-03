@@ -72,8 +72,9 @@ pub const VM = struct {
     frameBuf: [FramesMax]CallFrame = undefined,
     frames: std.ArrayList(CallFrame) = undefined,
 
-    stack: [StackMax]value.Value,
-    stackSize: usize,
+    stack: [StackMax]value.Value = undefined,
+    stackTop: [*]value.Value = undefined,
+    stackBottom: [*]value.Value = undefined,
 
     heap: *Heap,
 
@@ -84,36 +85,46 @@ pub const VM = struct {
         ret.* = .{
             .io = io,
             .alloc = alloc,
-            .stackSize = 0,
-            .stack = undefined,
             .globals = try .init(alloc, &.{}, &.{}),
             .heap = try .init(alloc),
         };
         ret.frames = .initBuffer(&ret.frameBuf);
+        ret.stackTop = &ret.stack;
+        ret.stackBottom = &ret.stack;
         try ret.defineNative("clock", nativeFns.clock);
         try ret.defineNative("toString", nativeFns.toString);
         return ret;
     }
 
     pub fn stackPush(self: *VM, val: value.Value) !void {
-        self.stack[self.stackSize] = val;
-        self.stackSize += 1;
+        self.stackTop[0] = val;
+        self.stackTop += 1;
+    }
+    
+    fn stackPeek(self: *VM, depth: usize) ?value.Value {
+        const st = self.stackTop - depth - 1;
+        if (st == self.stackBottom) 
+            return null;
+        return st[0];
     }
 
     pub fn stackPop(self: *VM) RuntimeError!value.Value {
-        if (self.stackSize == 0) return error.StackEmpty;
-        const ret = self.stack[self.stackSize - 1];
-        self.stackSize -= 1;
-        return ret;
+        if (self.stackTop == self.stackBottom)
+            return error.StackEmpty;
+        self.stackTop -= 1;
+        return self.stackTop[0];
     }
 
     fn stackReset(self: *VM) void {
-        self.stackSize = 0;
+        self.stackTop = self.stackBottom;
     }
 
     fn stackDrop(self: *VM, n: usize) void {
-        if (self.stackSize < n) self.stackSize = 0;
-        self.stackSize -= n;
+        if (self.stackTop - self.stackBottom < n) {
+            self.stackTop = self.stackBottom;
+        } else {
+            self.stackTop -= n;
+        }
     }
 
     pub fn deinit(self: *VM) void {
@@ -166,9 +177,10 @@ pub const VM = struct {
             if (comptime build_opts.lox_debug) {
                 std.debug.print("\x1b[2;37m", .{});
                 std.debug.print("          ", .{});
-                for (0..self.stackSize) |i| {
+                var ptr: [*]value.Value = &self.stack;
+                while (ptr != self.stackTop) : (ptr += 1) {
                     std.debug.print("[ ", .{});
-                    value.printValue(self.stack[i]);
+                    value.printValue(ptr[0]);
                     std.debug.print(" ]", .{});
                 }
                 std.debug.print("\n", .{});
@@ -183,7 +195,7 @@ pub const VM = struct {
                         _ = try self.stackPop();
                         return .Ok;
                     }
-                    self.stackSize -= df.closure.function.arity + 1;
+                    self.stackTop = df.slots;
                     try self.stackPush(result);
                     frame = &self.frames.items[self.frames.items.len - 1];
                     codePtr = frame.closure.function.chunk.code.items.ptr;
@@ -414,17 +426,14 @@ pub const VM = struct {
                             },
                             .NativeFn => |n| {
                                 const result = n.impl(
-                                    self.io,
-                                    self.heap,
-                                    argCount, 
-                                    @as([*]value.Value, &self.stack) + self.stackSize - argCount,
+                                    self.io, self.heap, argCount, self.stackTop - argCount,
                                 ) catch |e| {
                                     self.runtimeError("{any}", .{e});
                                     return .RuntimeError;
                                 };
                                 switch (result) {
                                     .success => |v| {
-                                        self.stackSize -= argCount + 1;
+                                        self.stackTop -= argCount + 1;
                                         try self.stackPush(v);
                                     },
                                     .failure => |msg| {
@@ -496,14 +505,9 @@ pub const VM = struct {
         const newFrame = self.frames.addOneAssumeCapacity();
         newFrame.closure = closure;
         newFrame.ip = 0;
-        newFrame.slots = @as([*]value.Value, &self.stack) + (self.stackSize - 1 - argCount);
+        newFrame.slots = self.stackTop - argCount - 1;
 
         return true;
-    }
-
-    fn stackPeek(self: *VM, depth: usize) ?value.Value {
-        if (self.stackSize <= depth) return null;
-        return self.stack[self.stackSize - 1 - depth];
     }
 
     fn runtimeError(self: *VM, comptime fmt: []const u8, args: anytype) void {

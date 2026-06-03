@@ -372,8 +372,8 @@ pub fn statement(self: *Parser) anyerror!void {
     } else if (self.match(.LeftBrace)) {
         self.compiler.beginScope();
         try self.block();
-        const numLocals = self.compiler.endScope();
-        for (0..numLocals) |_| {
+        var dropper = self.compiler.endScope();
+        while (dropper.dropNext()) |_| {
             try self.emitOpCode(.Pop);
         }
     } else {
@@ -433,8 +433,8 @@ fn forStatement(self: *Parser) !void {
         self.patchJump(loc);
         try self.emitOpCode(.Pop);
     }
-    const numLocals = self.compiler.endScope();
-    for (0..numLocals) |_| {
+    var dropper = self.compiler.endScope();
+    while (dropper.dropNext()) |_| {
         try self.emitOpCode(.Pop);
     }
 }

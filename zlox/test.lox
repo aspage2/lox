@@ -1,12 +1,15 @@
 
 fun outer() {
-    var x = "hello";
-
-    fun inner() {
-        print x;
+    var x = "hi";
+    
+    fun middle() {
+        fun inner(y) {
+            print x + y;
+        }
+        return inner;
     }
     
-    inner();
+    middle()(" ho");
 }
 
 outer();

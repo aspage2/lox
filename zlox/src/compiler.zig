@@ -19,6 +19,8 @@ pub const Local = struct {
     /// Scopedepth where this field was defined.
     /// uninitialized locals have a null depth to begin.
     depth: ?usize,
+    /// Local is captured by a closure upvalue.
+    isCaptured: bool,
 };
 
 /// Nested compilers all the way down.
@@ -73,23 +75,35 @@ pub fn beginScope(self: *Compiler) void {
 
 /// Exit a scope, calculating how many locals need to be popped from
 /// the value stack on return.
-pub fn endScope(self: *Compiler) u8 {
-    var numDropped: u8 = 0;
+pub fn endScope(self: *Compiler) Dropper {
     self.scopeDepth -= 1;
-    while (self.locals.getLastOrNull()) |l| {
-        const done = if (l.depth) |d| d <= self.scopeDepth else false;
-        if (done) break;
-        numDropped += 1;
-        _ = self.locals.pop();
-    }
-    return numDropped;
+    return .{ 
+        .locals = &self.locals,
+        .scopeDepth = self.scopeDepth
+    };
 }
+
+// Iterator pattern for dropping locals
+pub const Dropper = struct {
+    locals: *std.ArrayList(Local),
+    scopeDepth: usize,
+
+    pub fn dropNext(self: *Dropper) ?bool {
+        const local = self.locals.getLastOrNull() 
+            orelse return null;
+        const done = if (local.depth) |d| d <= self.scopeDepth else false;
+        if (done) return null;
+        _ = self.locals.pop();
+        return local.isCaptured;
+    }
+};
 
 /// Define a single, uninitialized local on the top of the stack.
 pub fn addLocal(self: *Compiler, name: Token) std.mem.Allocator.Error!void {
     const local = try self.locals.addOneBounded();
     local.name = name;
     local.depth = null;
+    local.isCaptured = false;
 }
 
 /// Determine the position in the value stack where this local will sit.
