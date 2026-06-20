@@ -1,15 +1,20 @@
 
-fun outer() {
-    var x = "hi";
+fun closure() {
+    var x = 1;
+    var y = 1;
     
-    fun middle() {
-        fun inner(y) {
-            print x + y;
-        }
-        return inner;
+    fun inner() {
+        var ret = x;
+        x = x + 1;
+        y = y + 1;
+        return ret + y;
     }
-    
-    middle()(" ho");
+
+    return inner;
 }
 
-outer();
+var f = closure();
+
+print f();
+print f();
+

@@ -433,9 +433,15 @@ fn forStatement(self: *Parser) !void {
         self.patchJump(loc);
         try self.emitOpCode(.Pop);
     }
+    try self.endCompilerScope();
+}
+
+fn endCompilerScope(self: *Parser) !void {
     var dropper = self.compiler.endScope();
-    while (dropper.dropNext()) |_| {
-        try self.emitOpCode(.Pop);
+    while (dropper.dropNext()) |isCaptured| {
+        try self.emitOpCode(
+            if (isCaptured) .CloseUpvalue else .Pop,
+        );
     }
 }
 

@@ -65,6 +65,8 @@ pub const OpCode = enum(u8) {
     Closure,
     GetUpValue,
     SetUpValue,
+    CloseUpvalue,
+
 };
 
 pub const InstructionError = error{
@@ -245,6 +247,7 @@ pub const Chunk = struct {
             },
             @intFromEnum(OpCode.GetUpValue) => return self.byteInstruction("OP_GET_UPVALUE", offset),
             @intFromEnum(OpCode.SetUpValue) => return self.byteInstruction("OP_SET_UPVALUE", offset),
+            @intFromEnum(OpCode.CloseUpvalue) => return self.byteInstruction("OP_CLOSE_UPVALUE", offset),
             else => {
                 std.debug.print("Unknown opcode: {d}\n", .{inst});
                 return offset + 1;

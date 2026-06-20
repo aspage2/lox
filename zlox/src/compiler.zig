@@ -58,6 +58,7 @@ pub fn init(compiler: *Compiler, funcType: FuncType, func: *value.FuncObj, enclo
     const local = compiler.locals.addOneAssumeCapacity();
     local.depth = 0;
     local.name = .{ .data = "", .type = .Error, .line = 1 };
+    local.isCaptured = false;
 }
 
 /// After a local's initializer is parsed, it is marked "initialized"
@@ -76,7 +77,6 @@ pub fn beginScope(self: *Compiler) void {
 /// Exit a scope, calculating how many locals need to be popped from
 /// the value stack on return.
 pub fn endScope(self: *Compiler) Dropper {
-    self.scopeDepth -= 1;
     return .{ 
         .locals = &self.locals,
         .scopeDepth = self.scopeDepth
@@ -128,6 +128,8 @@ pub fn resolveLocal(self: *Compiler, name: Token) error{SelfReferentialLocal}!?u
 pub fn resolveUpValue(self: *Compiler, name: Token) !?u8 {
     const parentCompiler = self.enclosing orelse return null;
     if (try parentCompiler.resolveLocal(name)) |local| {
+        const l = &parentCompiler.locals.items[local];
+        l.isCaptured = true;
         return try self.addUpValue(local, true);
     }
     if (try parentCompiler.resolveUpValue(name)) |uv| {

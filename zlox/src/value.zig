@@ -146,4 +146,6 @@ pub const ClosureObj = struct {
 
 pub const UpvalueObj = struct {
     location: *Value,
+    closedValue: Value,
+    next: ?*UpvalueObj,
 };

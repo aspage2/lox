@@ -2,6 +2,7 @@
 
 const std = @import("std");
 const value = @import("value.zig");
+const build_opts = @import("build_options");
 
 const Heap = @This();
 
@@ -32,9 +33,12 @@ pub fn deinit(self: *Heap) void {
         },
         .Upvalue => |uv| self.alloc.destroy(uv),
         else => {
-            std.debug.print("Not cleaning it up\n", .{});
+            if (build_opts.lox_debug) {
+                std.debug.print("Not cleaning it up\n", .{});
+            }
         },
     };
+    self.objects.deinit(self.alloc);
     self.strings.deinit();
 }
 
@@ -91,6 +95,8 @@ pub fn newClosure(self: *Heap, func: *value.FuncObj) !*value.ClosureObj {
 pub fn newUpvalue(self: *Heap, slot: *value.Value) !*value.UpvalueObj {
     const uv = try self.alloc.create(value.UpvalueObj);
     uv.location = slot;
+    uv.next = null;
+    uv.closedValue = .Nil;
     try self.objects.append(self.alloc, .{ .Upvalue = uv });
     return uv;
 }

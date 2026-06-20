@@ -76,6 +76,8 @@ pub const VM = struct {
     stackTop: [*]value.Value = undefined,
     stackBottom: [*]value.Value = undefined,
 
+    openUpvalues: ?*value.UpvalueObj,
+
     heap: *Heap,
 
     globals: std.array_hash_map.String(value.Value),
@@ -87,6 +89,7 @@ pub const VM = struct {
             .alloc = alloc,
             .globals = try .init(alloc, &.{}, &.{}),
             .heap = try .init(alloc),
+            .openUpvalues = null,
         };
         ret.frames = .initBuffer(&ret.frameBuf);
         ret.stackTop = &ret.stack;
@@ -102,9 +105,10 @@ pub const VM = struct {
     }
     
     fn stackPeek(self: *VM, depth: usize) ?value.Value {
-        const st = self.stackTop - depth - 1;
+        var st = self.stackTop - depth;
         if (st == self.stackBottom) 
             return null;
+        st -= 1;
         return st[0];
     }
 
@@ -190,6 +194,7 @@ pub const VM = struct {
             switch (codePtr[frame.ip]) {
                 @intFromEnum(inst.OpCode.Return) => {
                     const result = try self.stackPop();
+                    self.closeUpvalues(self.frames.items[self.frames.items.len - 1].slots);
                     const df = self.frames.pop().?;
                     if (self.frames.items.len == 0) {
                         _ = try self.stackPop();
@@ -249,7 +254,6 @@ pub const VM = struct {
                                 u8,
                                 &.{ ao.String, bo.String },
                             );
-                            defer self.alloc.free(newData);
                             const s = try self.heap.takeString(self.alloc, newData);
                             try self.stackPush(.{.Obj = .{ .String = s } });
                         },
@@ -460,7 +464,7 @@ pub const VM = struct {
                         const isLocal = frame.take_operand(u8) == 1;
                         const index = frame.take_operand(u8);
                         if (isLocal) {
-                            uv.* = try self.captureUpvalue(@ptrCast(frame.slots + index));
+                            uv.* = try self.captureUpvalue(frame.slots + index);
                         } else {
                             uv.* = frame.closure.upvalues.items[index];
                         }
@@ -482,14 +486,49 @@ pub const VM = struct {
                         };
                     frame.ip += 1;
                 },
+                @intFromEnum(inst.OpCode.CloseUpvalue) => {
+                    self.closeUpvalues(self.stackTop - 1);
+                    _ = try self.stackPop();
+                },
                 else => {},
             }
         }
         return InterpretResult.RuntimeError;
     }
 
-    fn captureUpvalue(self: *VM, v: *value.Value) !*value.UpvalueObj {
-        const created = try self.heap.newUpvalue(v);
+    fn closeUpvalues(self: *VM, loc: [*]value.Value) void {
+        while (self.openUpvalues) |openUV| {
+            const openLoc: [*]value.Value = @ptrCast(openUV.location);
+            if (openLoc - self.stackBottom < loc - self.stackBottom) break;
+            // Copy the stack value to the closure slot
+            openUV.closedValue = openUV.location.*;
+            openUV.location = &openUV.closedValue;
+            self.openUpvalues = openUV.next;
+        }
+    }
+
+    fn captureUpvalue(self: *VM, v: [*]value.Value) !*value.UpvalueObj {
+        const vLoc = v - self.stackBottom;
+        var prev: ?*value.UpvalueObj = null;
+        var maybeUv: ?*value.UpvalueObj = self.openUpvalues;
+        while (maybeUv) |uv| {
+            const uvLoc = uv.location - self.stackBottom;
+            if (uvLoc <= vLoc) break;
+            prev = maybeUv;
+            maybeUv = uv.next;
+        }
+        if (maybeUv) |uv| {
+            const loc: [*]value.Value = @ptrCast(uv.location);
+            if (loc == v) return uv;
+        }
+
+        const created = try self.heap.newUpvalue(@ptrCast(v));
+        created.next = maybeUv;
+        if (prev) |yesPrev| {
+            yesPrev.next = created;
+        } else {
+            self.openUpvalues = created;
+        }
         return created;
     }
 
@@ -542,4 +581,117 @@ pub const VM = struct {
         _ = try self.stackPop();
     }
 };
+
+
+const testing = std.testing;
+
+fn simpleScript() !struct { machine: *VM, scriptClosure: *value.ClosureObj } {
+    const m: *VM = try .init(testing.allocator, testing.io);
+    const fo = try m.heap.newFunction();
+    const co = try m.heap.newClosure(fo);
+    const f = m.frames.addOneAssumeCapacity();
+    f.closure = co;
+    f.ip = 0;
+    f.slots = m.stackBottom;
+    return .{.scriptClosure = co, .machine = m};
+}
+
+test "stack push and pop" {
+    const m: *VM = try .init(testing.allocator, testing.io);
+    defer m.deinit();
+
+    try m.stackPush(.{ .Number = 1 });
+    try m.stackPush(.{ .Number = 2 });
+    try m.stackPush(.{ .Number = 3 });
+
+    inline for ([_]f32{3, 2, 1}) |x| {
+        const v = try m.stackPop();
+        try testing.expect(v.equals(.{ .Number = x }));
+    }
+}
+
+test "stack push and peek" {
+    const m: *VM = try .init(testing.allocator, testing.io);
+    defer m.deinit();
+
+    try m.stackPush(.{ .Number = 2 });
+    try m.stackPush(.{ .Number = 1 });
+    try m.stackPush(.{ .Number = 0 });
+
+    inline for ([_]f32{0, 1, 2}) |x| {
+        const v = m.stackPeek(x) orelse
+            return error.UnexpectedValue;
+
+        try testing.expect(v.equals(.{ .Number = x }));
+    }
+}
+
+test "global get and set" {
+    const tuple = try simpleScript();
+    const m = tuple.machine;
+    defer m.deinit();
+    
+    const chunk = &tuple.scriptClosure.function.chunk;
+
+    const cloc = try chunk.addConstant(.{ .Number = 67 });
+    try chunk.putOpCode(.Constant, 1);
+    try chunk.put(@intCast(cloc), 1);
+
+    const gn = try m.heap.allocateString("myGlobal");
+    const gnLoc = try chunk.addConstant(.{ .Obj = .{ .String = gn } });
+    try chunk.putOpCode(.DefineGlobal, 1);
+    try chunk.put(@intCast(gnLoc), 1);
+
+    
+    try chunk.putOpCode(.GetGlobal, 1);
+    try chunk.put(@intCast(gnLoc), 1);
+
+    _ = try m.run();
+    
+    const g = m.globals.get("myGlobal") orelse return error.KeyError;
+    try testing.expect(g.equals(.{ .Number = 67 }));
+    try testing.expectEqual(m.stackTop - m.stackBottom, 1);
+    const v = m.stackPeek(0) orelse return error.UnexpectedNull;
+    try testing.expect(v.equals(.{ .Number = 67 }));
+}
+
+test "number addition" {
+    const tuple = try simpleScript();
+    const vm = tuple.machine;
+    defer vm.deinit();
+
+    const chunk = &tuple.scriptClosure.function.chunk;
+
+    try vm.stackPush(.{ .Number = 64 });
+    try vm.stackPush(.{ .Number = 3 });
+
+    try chunk.putOpCode(.Add, 1);
+
+    _ = try vm.run();
+
+    const v = vm.stackPeek(0) orelse return error.UnexpectedNull;
+    try testing.expect(v.equals(.{ .Number = 67 }));
+}
+
+test "string addition" {
+    const tuple = try simpleScript();
+    const vm = tuple.machine;
+    defer vm.deinit();
+
+    const chunk = &tuple.scriptClosure.function.chunk;
+
+    const s1 = try vm.heap.allocateString("hello");
+    const s2 = try vm.heap.allocateString(" world");
+    const s3 = try vm.heap.allocateString("hello world");
+
+    try vm.stackPush(.{ .Obj = .{ .String = s1 }});
+    try vm.stackPush(.{ .Obj = .{ .String = s2 }});
+
+    try chunk.putOpCode(.Add, 1);
+
+    _ = try vm.run();
+
+    const v = vm.stackPeek(0) orelse return error.UnexpectedNull;
+    try testing.expect(v.equals(.{ .Obj = .{ .String = s3 }}));
+}
 
