@@ -1,5 +1,4 @@
 /// The heap holds heap-allocated objects
-
 const std = @import("std");
 const value = @import("value.zig");
 const build_opts = @import("build_options");
@@ -62,7 +61,7 @@ pub fn newNative(self: *Heap, comptime name: []const u8, comptime impl: value.Na
     const n = try self.alloc.create(value.NativeObj);
     n.name = name;
     n.impl = impl;
-    try self.objects.append(self.alloc, .{ .NativeFn = n});
+    try self.objects.append(self.alloc, .{ .NativeFn = n });
     return n;
 }
 
@@ -87,8 +86,8 @@ pub fn newClosure(self: *Heap, func: *value.FuncObj) !*value.ClosureObj {
     for (0..closure.function.upvalueCount) |_| {
         closure.upvalues.appendAssumeCapacity(undefined);
     }
-    
-    try self.objects.append(self.alloc, .{.Closure=closure});
+
+    try self.objects.append(self.alloc, .{ .Closure = closure });
     return closure;
 }
 
@@ -127,7 +126,7 @@ pub const StringTable = struct {
         try self.tbl.put(self.alloc, sobj, {});
         return sobj;
     }
-    
+
     pub fn pprint(self: *StringTable) void {
         std.debug.print("<----STRING TABLE---->\n", .{});
         for (self.tbl.keys()) |k| {

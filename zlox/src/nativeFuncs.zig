@@ -1,4 +1,3 @@
-
 const std = @import("std");
 const value = @import("value.zig");
 const Heap = @import("heap.zig");
@@ -8,7 +7,7 @@ const NativeResult = value.NativeObj.NativeResult;
 
 pub fn clock(io: std.Io, _: *Heap, _: u8, _: [*]Value) anyerror!NativeResult {
     const val = std.Io.Clock.now(.real, io);
-    return .{ .success = .{.Number = @floatFromInt(val.toSeconds()) } };
+    return .{ .success = .{ .Number = @floatFromInt(val.toSeconds()) } };
 }
 
 pub fn toString(_: std.Io, heap: *Heap, argc: u8, argv: [*]Value) anyerror!NativeResult {
@@ -22,22 +21,21 @@ pub fn toString(_: std.Io, heap: *Heap, argc: u8, argv: [*]Value) anyerror!Nativ
             const rendered = try std.fmt.float.render(&buf, f, .{});
             const ret = try heap.allocateString(rendered);
             const obj: value.Obj = .{ .String = ret };
-            return .{.success = obj.asValue()};
+            return .{ .success = obj.asValue() };
         },
         .Bool => |b| {
             const ret = try heap.allocateString(if (b) "true" else "false");
             const obj: value.Obj = .{ .String = ret };
-            return .{.success = obj.asValue()};
+            return .{ .success = obj.asValue() };
         },
         .Nil => {
-            const ret = heap.allocateString("NIL")
-                catch @panic("out of memory");
+            const ret = heap.allocateString("NIL") catch @panic("out of memory");
             const obj: value.Obj = .{ .String = ret };
-            return .{.success = obj.asValue()};
+            return .{ .success = obj.asValue() };
         },
         .Obj => |o| {
             switch (o) {
-                .String => return .{.success = argv[0]},
+                .String => return .{ .success = argv[0] },
                 .Func => |f| {
                     if (f.name) |n| {
                         var buf: [256]u8 = undefined;
@@ -45,11 +43,11 @@ pub fn toString(_: std.Io, heap: *Heap, argc: u8, argv: [*]Value) anyerror!Nativ
                         try wr.print("<function {s}>", .{n});
                         const ret = try heap.allocateString(wr.buffered());
                         const obj: value.Obj = .{ .String = ret };
-                        return .{.success = obj.asValue()};
+                        return .{ .success = obj.asValue() };
                     } else {
                         const ret = try heap.allocateString("<script>");
                         const obj: value.Obj = .{ .String = ret };
-                        return .{.success = obj.asValue()};
+                        return .{ .success = obj.asValue() };
                     }
                 },
                 .Closure => |c| {
@@ -60,22 +58,22 @@ pub fn toString(_: std.Io, heap: *Heap, argc: u8, argv: [*]Value) anyerror!Nativ
                         try wr.print("<function {s}>", .{n});
                         const ret = try heap.allocateString(wr.buffered());
                         const obj: value.Obj = .{ .String = ret };
-                        return .{.success = obj.asValue()};
+                        return .{ .success = obj.asValue() };
                     } else {
                         const ret = try heap.allocateString("<script>");
                         const obj: value.Obj = .{ .String = ret };
-                        return .{.success = obj.asValue()};
+                        return .{ .success = obj.asValue() };
                     }
                 },
                 .Upvalue => {
                     const ret = try heap.allocateString("<upvalue>");
                     const obj: value.Obj = .{ .String = ret };
-                    return .{.success = obj.asValue()};
+                    return .{ .success = obj.asValue() };
                 },
                 .NativeFn => {
                     const ret = try heap.allocateString("<native function>");
                     const obj: value.Obj = .{ .String = ret };
-                    return .{.success = obj.asValue()};
+                    return .{ .success = obj.asValue() };
                 },
             }
         },

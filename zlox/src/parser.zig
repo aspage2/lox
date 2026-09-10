@@ -172,6 +172,7 @@ fn call(self: *Parser, _: bool) !void {
     try self.emitTwo(.Call, argCount);
 }
 
+/// Parse an argument list from the source.
 fn argList(self: *Parser) !u8 {
     var count: u8 = 0;
     if (!self.check(.RightParen)) {
@@ -233,17 +234,47 @@ pub fn declaration(self: *Parser) !void {
     if (self.panicMode) self.synchronize();
 }
 
+/// Parse an entire function declaration.
+///
+///     parser is here.
+///     v
+/// fun my_func(exp1, exp2, exp3) {
+///     statement1;
+/// }
 fn funDeclaration(self: *Parser) anyerror!void {
     const global = try self.parseVariable("Expect a function name");
+
+    // The "initialization" mark is a safeguard in eager code
+    // to prevent var x = x; i.e. self-referential definitions.
+    // in the case of functions, this is actually useful (recursion!),
+    // so we mark the function "initialized" here to prevent any errors
+    // in the function body if the function name is used.
     self.compiler.markInitialized();
+
     try self.function(.Func);
+
+    // Call `defineVariable` here to save the closure object
+    // defined in `self.function` to the global var table.
+    // Effectively noops otherwise.
     try self.defineVariable(global);
 }
 
+/// Parse a function, including parameter list and body.
+///
+///            parser is here.
+///            v
+/// fun my_func(exp1, exp2, exp3) {
+///     statement1;
+/// }
 fn function(self: *Parser, typ: Compiler.FuncType) !void {
     const compilingFunc = try self.heap.newFunction();
-    var newCompiler: Compiler = undefined; 
+
+    // Each function is handled by its own compiler instance.
+    // instances mantain a reference to the parent compiler
+    // when leaving the function scope
+    var newCompiler: Compiler = undefined;
     newCompiler.init(typ, compilingFunc, self.compiler);
+
     self.compiler = &newCompiler;
 
     // Assign the name of the function
@@ -251,6 +282,8 @@ fn function(self: *Parser, typ: Compiler.FuncType) !void {
         self.compiler.function.name = try self.heap.strings.make(self.previous.data);
     }
 
+    // Define the scope NOW so the parsed variables below are
+    // treated as locals in the variable-parsing helpers
     newCompiler.beginScope();
 
     self.consume(.LeftParen, "Function parameters must be enclosed by ( )");
@@ -271,10 +304,15 @@ fn function(self: *Parser, typ: Compiler.FuncType) !void {
     try self.block();
 
     const func = try self.endCompiler();
-    
-    const f = try self.makeConstant(.{ .Obj = .{ .Func = func } });
-    try self.emitTwo(.Closure, f);
 
+    // After parsing the source into a function object, the original
+    // compiler saves the function definition as a constant and emits
+    // a CLOSURE command. This command tells lox to create a new closure
+    // from this function based on the current stack slots in the VM.
+    const f = try self.makeConstant(.{ .Obj = .{ .Func = func } });
+
+    // CLOSURE {func obj} {uv1.isLocal} {uv1.index} {uv2.isLocal} {uv2.index} [...]
+    try self.emitTwo(.Closure, f);
     for (0..func.upvalueCount) |i| {
         const uv = newCompiler.upvalues.items[i];
         try self.emitByte(if (uv.isLocal) 1 else 0);
@@ -293,47 +331,71 @@ fn varDeclaration(self: *Parser) !void {
     try self.defineVariable(global);
 }
 
+/// Parse the next token as a variable declaration.
+///
+/// Use current compiler scope level to determine how to treat
+/// the variable:
+/// * If in the global scope, allocate a string for the global name
+///   and add it to the chunk values. Returns the index of the constant.
+/// * If in a local scope, create a slot for the local in the compiler's
+///   locals table. The return value is meaningless in this case.
 fn parseVariable(self: *Parser, comptime errMsg: []const u8) !u8 {
     self.consume(.Ident, errMsg);
 
-    self.declareVariable();
-    if (self.compiler.scopeDepth > 0) return 0;
+    // If we are locally scoped, we do a compile-time check for
+    // circular definitions, then create an uninitialized local
+    // on our locals stack.
+    if (self.compiler.scopeDepth > 0) {
+        if (self.detectRedefinition(self.previous)) {
+            self.err("Cannot re-define varialbe in the same scope");
+        }
+        self.compiler.addLocal(self.previous) catch {
+            self.err("too many locals");
+        };
+        return 0;
+    }
 
     return try self.identifierConstant(self.previous);
 }
 
-fn identifierConstant(self: *Parser, tok: Token) !u8 {
-    const sobj = try self.heap.allocateString(tok.data);
-    return try self.makeConstant(.{ .Obj = .{ .String = sobj } });
-}
-
-fn defineVariable(self: *Parser, loc: u8) !void {
-    // Local-depth (>0) cases are already defined
-    // at this point, so we can skip
+/// Called once the bytecode for a variable's initializer
+/// has been created.
+///
+/// Again, the behavior of this function depends on the current scope:
+/// * If global, emit a DEFINE_GLOBAL with the provided constant position
+///   corresponding to the global name.
+/// * If local, the corresponding local entry is marked "initialized" to
+///   allow its use down the line. The argument is meaningless in this case.
+fn defineVariable(self: *Parser, global_name_ind: u8) !void {
+    // As locally-scoped variables are stored
+    // on the stack, we "mark" them with the current scope depth.
     if (self.compiler.scopeDepth > 0) {
         self.compiler.markInitialized();
         return;
     }
-    try self.emitTwo(.DefineGlobal, loc);
+    try self.emitTwo(.DefineGlobal, global_name_ind);
 }
 
-fn declareVariable(self: *Parser) void {
-    // We handle globals differently than locally-scoped values
-    if (self.compiler.scopeDepth == 0)
-        return;
+/// Return true iff there is already a local variable at this
+/// scope level with the same name as tok.
+fn detectRedefinition(self: *Parser, tok: Token) bool {
     // Detect redefined variables in the same scope
     var i = self.compiler.locals.items.len;
     while (i > 0) : (i -= 1) {
         const l = self.compiler.locals.items[i - 1];
         const done = if (l.depth) |d| d < self.compiler.scopeDepth else true;
-        if (done) break;
-        if (identifiersEqual(self.previous, l.name)) {
-            self.err("Cannot re-define varialbe in the same scope");
+        if (done) return false;
+        if (identifiersEqual(tok, l.name)) {
+            return true;
         }
     }
-    self.compiler.addLocal(self.previous) catch {
-        self.err("too many locals");
-    };
+    return false;
+}
+
+/// Create a string constant in this chunk out of the given token span.
+fn identifierConstant(self: *Parser, tok: Token) !u8 {
+    const sobj = try self.heap.allocateString(tok.data);
+    return try self.makeConstant(.{ .Obj = .{ .String = sobj } });
 }
 
 inline fn identifiersEqual(a: Token, b: Token) bool {
@@ -365,7 +427,7 @@ pub fn statement(self: *Parser) anyerror!void {
         try self.ifStatement();
     } else if (self.match(.Return)) {
         try self.returnStatement();
-    }else if (self.match(.While)) {
+    } else if (self.match(.While)) {
         try self.whileStatement();
     } else if (self.match(.For)) {
         try self.forStatement();
@@ -564,33 +626,45 @@ fn variable(self: *Parser, canParse: bool) !void {
     return self.namedVariable(self.previous, canParse);
 }
 
-
+/// Parse either a READ expression or an ASSIGNMENT expression for an ident.
+///
+/// name is the name of the ident to reference.
+/// canParse indicates whether we have dipped deep enough into
+///   the operator precedence that we can no longer accept an EQUAL token.
 fn namedVariable(self: *Parser, name: Token, canParse: bool) !void {
     var getOp: inst.OpCode = undefined;
     var setOp: inst.OpCode = undefined;
     var arg: u8 = undefined;
-    if (self.compiler.resolveLocal(name)) |maybe_a| {
-        if (maybe_a) |a| {
-            arg = a;
-            getOp = .GetLocal;
-            setOp = .SetLocal;
-        } else if (try self.compiler.resolveUpValue(name)) |u| {
-           arg = u;
-           getOp = .GetUpValue;
-           setOp = .SetUpValue;
-        } else {
-            arg = try self.identifierConstant(name);
-            getOp = .GetGlobal;
-            setOp = .SetGlobal;
-        }
-    } else |_| {
+
+    const maybe_a = self.compiler.resolveLocal(name) catch {
         self.err("Attempt to define a variable in terms of itself");
         return;
+    };
+
+    if (maybe_a) |a| {
+        // The variable is a local within this compiler scope.
+        arg = a;
+        getOp = .GetLocal;
+        setOp = .SetLocal;
+    } else if (try self.compiler.resolveUpValue(name)) |u| {
+        // the variable is closed on a parent element, i.e. an "upvalue"
+        arg = u;
+        getOp = .GetUpValue;
+        setOp = .SetUpValue;
+    } else {
+        // The variable is hopefully a globally-defined identifier.
+        arg = try self.identifierConstant(name);
+        getOp = .GetGlobal;
+        setOp = .SetGlobal;
     }
+
+    // If we are allowed to parse assignment expressions
+    // AND the next token is EQUAL, parse an assignment expression.
     if (canParse and self.match(.Equal)) {
         try self.expression();
         try self.emitTwo(setOp, arg);
     } else {
+        // otherwise, this reference is a GET reference.
         try self.emitTwo(getOp, arg);
     }
 }
@@ -699,6 +773,7 @@ fn literal(self: *Parser, _: bool) !void {
     }
 }
 
+/// Create a constant in the current chunk's constant table.
 fn makeConstant(self: *Parser, val: value.Value) !u8 {
     const valLoc = try self.currentChunk().addConstant(val);
     if (valLoc > std.math.maxInt(u8)) {
@@ -741,9 +816,12 @@ fn emitReturn(self: *Parser) !void {
     try self.emitOpCode(.Return);
 }
 
+/// Complete the compilation of the function or script.
+/// discards the current compiler and sets the parser compiler
+/// to the parent compiler.
 pub fn endCompiler(self: *Parser) !*value.FuncObj {
     try self.emitReturn();
-    
+
     const f = self.compiler.function;
     if (build_options.lox_debug and !self.hadError) {
         try self.currentChunk().disassemble(f.name orelse "<script>");

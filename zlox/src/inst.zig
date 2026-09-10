@@ -66,7 +66,6 @@ pub const OpCode = enum(u8) {
     GetUpValue,
     SetUpValue,
     CloseUpvalue,
-
 };
 
 pub const InstructionError = error{
@@ -240,7 +239,7 @@ pub const Chunk = struct {
                     offset += 1;
                     std.debug.print(
                         "{d:>4}     |                {s} {d}\n",
-                        .{offset - 2, typ, idx},
+                        .{ offset - 2, typ, idx },
                     );
                 }
                 return offset;
@@ -283,4 +282,3 @@ pub const Chunk = struct {
         return offset + 3;
     }
 };
-

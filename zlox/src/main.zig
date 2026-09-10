@@ -37,12 +37,10 @@ pub fn main(init: std.process.Init) !void {
                 var rd = file.reader(init.io, buf[0..]);
                 const fileSize = try file.length(init.io);
                 const source = try rd.interface.readAlloc(arena, fileSize);
-                const hp: *Heap = try .init(arena); 
-                const func = try @import("parser.zig").compile(arena, source, hp)
-                    orelse std.process.exit(1);
+                const hp: *Heap = try .init(arena);
+                const func = try @import("parser.zig").compile(arena, source, hp) orelse std.process.exit(1);
                 try func.chunk.disassemble("Script");
                 hp.strings.pprint();
-
             } else {
                 std.debug.print("Usage: ./lox compile [FNAME]", .{});
                 std.process.exit(1);

@@ -30,7 +30,7 @@ const CallFrame = struct {
     closure: *value.ClosureObj,
     ip: usize,
     slots: [*]value.Value,
-    
+
     fn take_operand(self: *CallFrame, comptime T: type) T {
         const chunk = self.closure.function.chunk;
         const code = chunk.code;
@@ -103,10 +103,10 @@ pub const VM = struct {
         self.stackTop[0] = val;
         self.stackTop += 1;
     }
-    
+
     fn stackPeek(self: *VM, depth: usize) ?value.Value {
         var st = self.stackTop - depth;
-        if (st == self.stackBottom) 
+        if (st == self.stackBottom)
             return null;
         st -= 1;
         return st[0];
@@ -138,10 +138,9 @@ pub const VM = struct {
         self.alloc.destroy(self);
     }
 
+    /// Compile and run the provided source code.
     pub fn interpret(self: *VM, source: []const u8) !InterpretResult {
-
-        const func = try parser.compile(self.alloc, source, self.heap)
-            orelse return .CompileError;
+        const func = try parser.compile(self.alloc, source, self.heap) orelse return .CompileError;
 
         if (build_opts.lox_debug) {
             std.debug.print("\x1b[2;37m", .{});
@@ -172,9 +171,8 @@ pub const VM = struct {
         return res;
     }
 
-
     fn run(self: *VM) !InterpretResult {
-        var frame = &self.frames.items[self.frames.items.len-1];
+        var frame = &self.frames.items[self.frames.items.len - 1];
         var codePtr: [*]u8 = frame.closure.function.chunk.code.items.ptr;
 
         while (frame.ip < frame.closure.function.chunk.len()) {
@@ -255,7 +253,7 @@ pub const VM = struct {
                                 &.{ ao.String, bo.String },
                             );
                             const s = try self.heap.takeString(self.alloc, newData);
-                            try self.stackPush(.{.Obj = .{ .String = s } });
+                            try self.stackPush(.{ .Obj = .{ .String = s } });
                         },
                         else => unreachable,
                     }
@@ -416,21 +414,57 @@ pub const VM = struct {
                     frame.ip += 1;
                 },
                 @intFromEnum(inst.OpCode.Call) => blk: {
+                    // Calling convention for expression: my_func(arg1, arg2, arg3);
+                    // when my_func is a closure (i.e. a function definition)
+                    //
+                    // PUSH my_func closure object
+                    // {evaluate arg1 expression}
+                    // {evaluate arg2 expression}
+                    // {evaluate arg3 expression}
+                    // CALL 3
+                    //
+                    // At the point that the VM reads CALL 3, the stack looks like this:
+                    // +-----+---------+------+------+------+
+                    // | ... | my_func | arg1 | arg2 | arg3 |
+                    // +-----+---------+------+------+------+
+                    //
+                    // The VM will first load the implementation of my_func from the stack.
+                    //
+                    // --- if the implementation is a LOX CLOSURE OBJECT ---
+                    // * Lox creates a new call frame in its own call stack.
+                    // * The closure object is just the `my_func` object on the stack.
+                    // * The frame's stack window starts at the position of `my_func` in the stack
+                    //
+                    // Afterwards, the VM operates from the new frame and the stack looks like this:
+                    // +---------+------+------+------+
+                    // | my_func | arg1 | arg2 | arg3 |
+                    // +---------+------+------+------+
+                    //
+                    // The closure object is pre-populated with local refs for each argument.
+                    // During compilation, each variable expression which corresponds to a
+                    // function parameter is referenced as that particular local.
+                    //
+                    // --- if the implementation is a NATIVE ZIG FUNCTION ---
+                    // The function implementation is invoked with the raw parameter list.
+                    // no stack entry is created because the function runs right here and now.
                     const argCount = frame.take_operand(u8);
                     const val = self.stackPeek(argCount).?;
                     switch (val) {
-                        .Obj => |o| switch(o) {
+                        .Obj => |o| switch (o) {
                             .Closure => |c| {
                                 if (!self.call(c, argCount)) {
                                     return .RuntimeError;
                                 }
-                                frame = &self.frames.items[self.frames.items.len-1];
+                                frame = &self.frames.items[self.frames.items.len - 1];
                                 codePtr = frame.closure.function.chunk.code.items.ptr;
                                 break :blk;
                             },
                             .NativeFn => |n| {
                                 const result = n.impl(
-                                    self.io, self.heap, argCount, self.stackTop - argCount,
+                                    self.io,
+                                    self.heap,
+                                    argCount,
+                                    self.stackTop - argCount,
                                 ) catch |e| {
                                     self.runtimeError("{any}", .{e});
                                     return .RuntimeError;
@@ -457,6 +491,11 @@ pub const VM = struct {
                     return .RuntimeError;
                 },
                 @intFromEnum(inst.OpCode.Closure) => {
+                    // Push a closure object onto the stack.
+                    //
+                    // The closure object receives the function definition
+                    // from the chunk constants. Then, it resolves the pointer
+                    // references to the correct upvalues.
                     const f = frame.take_operand(*value.FuncObj);
                     const c = try self.heap.newClosure(f);
                     try self.stackPush(.{ .Obj = .{ .Closure = c } });
@@ -532,9 +571,10 @@ pub const VM = struct {
         return created;
     }
 
+    /// Set up the interpreter to execute the provided closure definition.
     fn call(self: *VM, closure: *value.ClosureObj, argCount: u8) bool {
         if (argCount != closure.function.arity) {
-            self.runtimeError("Expect {d} args, got {d}", .{closure.function.arity, argCount});
+            self.runtimeError("Expect {d} args, got {d}", .{ closure.function.arity, argCount });
             return false;
         }
 
@@ -553,7 +593,7 @@ pub const VM = struct {
         std.debug.print(fmt, args);
         var i = self.frames.items.len;
         while (i > 0) : (i -= 1) {
-            const frame = &self.frames.items[i-1];
+            const frame = &self.frames.items[i - 1];
             const chunk = frame.closure.function.chunk;
 
             var l: u32 = 0;
@@ -568,20 +608,18 @@ pub const VM = struct {
             } else {
                 std.debug.print("script\n", .{});
             }
-
         }
         self.stackReset();
     }
 
     pub fn defineNative(self: *VM, comptime name: []const u8, comptime func: value.NativeObj.Impl) !void {
-        const no = value.Obj{.NativeFn = try self.heap.newNative(name, func)};
+        const no = value.Obj{ .NativeFn = try self.heap.newNative(name, func) };
         const val: value.Value = no.asValue();
         try self.stackPush(val);
         try self.globals.put(self.alloc, name, val);
         _ = try self.stackPop();
     }
 };
-
 
 const testing = std.testing;
 
@@ -593,7 +631,7 @@ fn simpleScript() !struct { machine: *VM, scriptClosure: *value.ClosureObj } {
     f.closure = co;
     f.ip = 0;
     f.slots = m.stackBottom;
-    return .{.scriptClosure = co, .machine = m};
+    return .{ .scriptClosure = co, .machine = m };
 }
 
 test "stack push and pop" {
@@ -604,7 +642,7 @@ test "stack push and pop" {
     try m.stackPush(.{ .Number = 2 });
     try m.stackPush(.{ .Number = 3 });
 
-    inline for ([_]f32{3, 2, 1}) |x| {
+    inline for ([_]f32{ 3, 2, 1 }) |x| {
         const v = try m.stackPop();
         try testing.expect(v.equals(.{ .Number = x }));
     }
@@ -618,7 +656,7 @@ test "stack push and peek" {
     try m.stackPush(.{ .Number = 1 });
     try m.stackPush(.{ .Number = 0 });
 
-    inline for ([_]f32{0, 1, 2}) |x| {
+    inline for ([_]f32{ 0, 1, 2 }) |x| {
         const v = m.stackPeek(x) orelse
             return error.UnexpectedValue;
 
@@ -630,7 +668,7 @@ test "global get and set" {
     const tuple = try simpleScript();
     const m = tuple.machine;
     defer m.deinit();
-    
+
     const chunk = &tuple.scriptClosure.function.chunk;
 
     const cloc = try chunk.addConstant(.{ .Number = 67 });
@@ -642,12 +680,11 @@ test "global get and set" {
     try chunk.putOpCode(.DefineGlobal, 1);
     try chunk.put(@intCast(gnLoc), 1);
 
-    
     try chunk.putOpCode(.GetGlobal, 1);
     try chunk.put(@intCast(gnLoc), 1);
 
     _ = try m.run();
-    
+
     const g = m.globals.get("myGlobal") orelse return error.KeyError;
     try testing.expect(g.equals(.{ .Number = 67 }));
     try testing.expectEqual(m.stackTop - m.stackBottom, 1);
@@ -684,14 +721,13 @@ test "string addition" {
     const s2 = try vm.heap.allocateString(" world");
     const s3 = try vm.heap.allocateString("hello world");
 
-    try vm.stackPush(.{ .Obj = .{ .String = s1 }});
-    try vm.stackPush(.{ .Obj = .{ .String = s2 }});
+    try vm.stackPush(.{ .Obj = .{ .String = s1 } });
+    try vm.stackPush(.{ .Obj = .{ .String = s2 } });
 
     try chunk.putOpCode(.Add, 1);
 
     _ = try vm.run();
 
     const v = vm.stackPeek(0) orelse return error.UnexpectedNull;
-    try testing.expect(v.equals(.{ .Obj = .{ .String = s3 }}));
+    try testing.expect(v.equals(.{ .Obj = .{ .String = s3 } }));
 }
-

@@ -61,7 +61,7 @@ pub fn printObject(obj: Obj) void {
         .String => |s| std.debug.print("{s}", .{s}),
         .Func => |f| f.print(),
         .NativeFn => |n| std.debug.print("<native {s}>", .{n.name}),
-        .Closure => |c| if (c.function.name) |n| 
+        .Closure => |c| if (c.function.name) |n|
             std.debug.print("<closure {s}>", .{n})
         else
             std.debug.print("<script>", .{}),
@@ -126,15 +126,18 @@ pub const NativeObj = struct {
     impl: Impl,
 
     pub const NativeResult = union(enum) {
-        success: Value, failure: StringObj,
+        success: Value,
+        failure: StringObj,
     };
 
     /// A NativeFn is a lox callable implemented in Zig.
-    pub const Impl = *const fn(
-        io: std.Io, heap: *Heap, argCount: u8, args: [*]Value,
+    pub const Impl = *const fn (
+        io: std.Io,
+        heap: *Heap,
+        argCount: u8,
+        args: [*]Value,
     ) anyerror!NativeResult;
 };
-
 
 // Closures
 
@@ -142,7 +145,6 @@ pub const ClosureObj = struct {
     function: *FuncObj,
     upvalues: std.ArrayList(*UpvalueObj),
 };
-
 
 pub const UpvalueObj = struct {
     location: *Value,
