@@ -54,18 +54,20 @@ upvalues: std.ArrayList(UpValue) = undefined,
 /// Scope depth of 0 represents the global scope.
 scopeDepth: usize = 0,
 
+functionPtr: *value.Obj = undefined,
 function: *value.FuncObj = undefined,
 funcType: FuncType,
 
 pub const FuncType = enum { Script, Func };
 
-pub fn init(compiler: *Compiler, funcType: FuncType, func: *value.FuncObj, enclosing: ?*Compiler) void {
+pub fn init(compiler: *Compiler, funcType: FuncType, func: *value.Obj, enclosing: ?*Compiler) void {
     compiler.funcType = funcType;
     compiler.enclosing = enclosing;
     compiler.locals = .initBuffer(&compiler.localBuffer);
     compiler.upvalues = .initBuffer(&compiler.upvalueBuffer);
     compiler.scopeDepth = 0;
-    compiler.function = func;
+    compiler.functionPtr = func;
+    compiler.function = func.instance.Func;
 
     const local = compiler.locals.addOneAssumeCapacity();
     local.depth = 0;

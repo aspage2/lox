@@ -11,30 +11,31 @@ pub fn clock(io: std.Io, _: *Heap, _: u8, _: [*]Value) anyerror!NativeResult {
 }
 
 pub fn toString(_: std.Io, heap: *Heap, argc: u8, argv: [*]Value) anyerror!NativeResult {
-    if (argc != 1) return .{
-        .failure = try heap.strings.make("incorrect arity"),
-    };
+    if (argc != 1) {
+        const s: value.StringObj = "incorrect arity";
+        const o = try heap.allocateString(s);
+        return .{
+            .failure = o.instance.String,
+        };
+    }
     const v = argv[0];
     switch (v) {
         .Number => |f| {
             var buf: [128]u8 = undefined;
             const rendered = try std.fmt.float.render(&buf, f, .{});
             const ret = try heap.allocateString(rendered);
-            const obj: value.Obj = .{ .String = ret };
-            return .{ .success = obj.asValue() };
+            return .{ .success = ret.asValue() };
         },
         .Bool => |b| {
             const ret = try heap.allocateString(if (b) "true" else "false");
-            const obj: value.Obj = .{ .String = ret };
-            return .{ .success = obj.asValue() };
+            return .{ .success = ret.asValue() };
         },
         .Nil => {
             const ret = heap.allocateString("NIL") catch @panic("out of memory");
-            const obj: value.Obj = .{ .String = ret };
-            return .{ .success = obj.asValue() };
+            return .{ .success = ret.asValue() };
         },
         .Obj => |o| {
-            switch (o) {
+            switch (o.instance) {
                 .String => return .{ .success = argv[0] },
                 .Func => |f| {
                     if (f.name) |n| {
@@ -42,12 +43,10 @@ pub fn toString(_: std.Io, heap: *Heap, argc: u8, argv: [*]Value) anyerror!Nativ
                         var wr = std.Io.Writer.fixed(&buf);
                         try wr.print("<function {s}>", .{n});
                         const ret = try heap.allocateString(wr.buffered());
-                        const obj: value.Obj = .{ .String = ret };
-                        return .{ .success = obj.asValue() };
+                        return .{ .success = ret.asValue() };
                     } else {
                         const ret = try heap.allocateString("<script>");
-                        const obj: value.Obj = .{ .String = ret };
-                        return .{ .success = obj.asValue() };
+                        return .{ .success = ret.asValue() };
                     }
                 },
                 .Closure => |c| {
@@ -57,23 +56,19 @@ pub fn toString(_: std.Io, heap: *Heap, argc: u8, argv: [*]Value) anyerror!Nativ
                         var wr = std.Io.Writer.fixed(&buf);
                         try wr.print("<function {s}>", .{n});
                         const ret = try heap.allocateString(wr.buffered());
-                        const obj: value.Obj = .{ .String = ret };
-                        return .{ .success = obj.asValue() };
+                        return .{ .success = ret.asValue() };
                     } else {
                         const ret = try heap.allocateString("<script>");
-                        const obj: value.Obj = .{ .String = ret };
-                        return .{ .success = obj.asValue() };
+                        return .{ .success = ret.asValue() };
                     }
                 },
                 .Upvalue => {
                     const ret = try heap.allocateString("<upvalue>");
-                    const obj: value.Obj = .{ .String = ret };
-                    return .{ .success = obj.asValue() };
+                    return .{ .success = ret.asValue() };
                 },
                 .NativeFn => {
                     const ret = try heap.allocateString("<native function>");
-                    const obj: value.Obj = .{ .String = ret };
-                    return .{ .success = obj.asValue() };
+                    return .{ .success = ret.asValue() };
                 },
             }
         },
