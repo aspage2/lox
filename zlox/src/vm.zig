@@ -27,6 +27,7 @@ const FramesMax: usize = 64;
 const StackMax: usize = (std.math.maxInt(u8) + 1) * 64;
 
 const CallFrame = struct {
+    closurePtr: *value.Obj,
     closure: *value.ClosureObj,
     ip: usize,
     slots: [*]value.Value,
@@ -53,12 +54,12 @@ const CallFrame = struct {
             value.StringObj => {
                 self.ip += 1;
                 const idx = code.items.ptr[self.ip];
-                return constants.items.ptr[idx].Obj.String;
+                return constants.items.ptr[idx].Obj.instance.String;
             },
             *value.FuncObj => {
                 self.ip += 1;
                 const idx = code.items.ptr[self.ip];
-                return constants.items.ptr[idx].Obj.Func;
+                return constants.items.ptr[idx].Obj.instance.Func;
             },
             else => @panic("unsupported type"),
         }
@@ -148,14 +149,15 @@ pub const VM = struct {
             std.debug.print("\x1b[0m", .{});
         }
 
-        try self.stackPush(.{ .Obj = .{ .Func = func } });
+        try self.stackPush(func.asValue());
 
         const frame = self.frames.addOneAssumeCapacity();
-        const closure = try self.heap.newClosure(func);
+        const closure = try self.heap.newClosure(func.instance.Func);
         // Pop function obj
         _ = try self.stackPop();
-        try self.stackPush(.{ .Obj = .{ .Closure = closure } });
-        frame.closure = closure;
+        try self.stackPush(closure.asValue());
+        frame.closurePtr = closure;
+        frame.closure = closure.instance.Closure;
         frame.ip = 0;
         frame.slots = &self.stack;
 
@@ -240,8 +242,8 @@ pub const VM = struct {
                                 self.runtimeError("Operands for concat must be strings", .{});
                                 return InterpretResult.RuntimeError;
                             };
-                            const boType = std.meta.activeTag(bo);
-                            const aoType = std.meta.activeTag(ao);
+                            const boType = std.meta.activeTag(bo.instance);
+                            const aoType = std.meta.activeTag(ao.instance);
                             if (boType != aoType or boType != .String) {
                                 self.runtimeError("Operands for concat must be strings", .{});
                                 return InterpretResult.RuntimeError;
@@ -250,10 +252,10 @@ pub const VM = struct {
                             const newData = try std.mem.concat(
                                 self.alloc,
                                 u8,
-                                &.{ ao.String, bo.String },
+                                &.{ ao.instance.String, bo.instance.String },
                             );
                             const s = try self.heap.takeString(self.alloc, newData);
-                            try self.stackPush(.{ .Obj = .{ .String = s } });
+                            try self.stackPush(s.asValue());
                         },
                         else => unreachable,
                     }
@@ -450,7 +452,7 @@ pub const VM = struct {
                     const argCount = frame.take_operand(u8);
                     const val = self.stackPeek(argCount).?;
                     switch (val) {
-                        .Obj => |o| switch (o) {
+                        .Obj => |o| switch (o.instance) {
                             .Closure => |c| {
                                 if (!self.call(c, argCount)) {
                                     return .RuntimeError;
@@ -498,8 +500,8 @@ pub const VM = struct {
                     // references to the correct upvalues.
                     const f = frame.take_operand(*value.FuncObj);
                     const c = try self.heap.newClosure(f);
-                    try self.stackPush(.{ .Obj = .{ .Closure = c } });
-                    for (c.upvalues.items) |*uv| {
+                    try self.stackPush(c.asValue());
+                    for (c.instance.Closure.upvalues.items) |*uv| {
                         const isLocal = frame.take_operand(u8) == 1;
                         const index = frame.take_operand(u8);
                         if (isLocal) {
@@ -562,13 +564,14 @@ pub const VM = struct {
         }
 
         const created = try self.heap.newUpvalue(@ptrCast(v));
-        created.next = maybeUv;
+        const uv = created.instance.Upvalue;
+        created.instance.Upvalue.next = maybeUv;
         if (prev) |yesPrev| {
-            yesPrev.next = created;
+            yesPrev.next = uv;
         } else {
-            self.openUpvalues = created;
+            self.openUpvalues = uv;
         }
-        return created;
+        return uv;
     }
 
     /// Set up the interpreter to execute the provided closure definition.
@@ -613,7 +616,7 @@ pub const VM = struct {
     }
 
     pub fn defineNative(self: *VM, comptime name: []const u8, comptime func: value.NativeObj.Impl) !void {
-        const no = value.Obj{ .NativeFn = try self.heap.newNative(name, func) };
+        const no = try self.heap.newNative(name, func);
         const val: value.Value = no.asValue();
         try self.stackPush(val);
         try self.globals.put(self.alloc, name, val);

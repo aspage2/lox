@@ -13,7 +13,7 @@ pub const Value = union(ValType) {
     Bool: bool,
     Number: f32,
     Nil: void,
-    Obj: Obj,
+    Obj: *Obj,
 
     pub fn expectType(self: Value, comptime typ: ValType) ?std.meta.fieldInfo(Value, typ).type {
         return switch (self) {
@@ -56,8 +56,8 @@ pub fn printValue(val: Value) void {
     }
 }
 
-pub fn printObject(obj: Obj) void {
-    switch (obj) {
+pub fn printObject(obj: *Obj) void {
+    switch (obj.instance) {
         .String => |s| std.debug.print("{s}", .{s}),
         .Func => |f| f.print(),
         .NativeFn => |n| std.debug.print("<native {s}>", .{n.name}),
@@ -70,28 +70,39 @@ pub fn printObject(obj: Obj) void {
 }
 
 /// Obj is a wrapper type for heap-allocated objects.
-pub const Obj = union(Obj.Type) {
-    const Type = enum(u8) {
-        String,
-        Func,
-        NativeFn,
-        Closure,
-        Upvalue,
-    };
-    String: StringObj,
-    Func: *FuncObj,
-    NativeFn: *NativeObj,
-    Closure: *ClosureObj,
-    Upvalue: *UpvalueObj,
+pub const Obj = struct {
 
-    fn equals(self: Obj, other: Obj) bool {
-        switch (self) {
-            .String => |s| return std.mem.eql(u8, s, other.String),
+    const InstUnion = union(enum(u8)) {
+        String: StringObj,
+        Func: *FuncObj,
+        NativeFn: *NativeObj,
+        Closure: *ClosureObj,
+        Upvalue: *UpvalueObj,
+    };
+
+    instance: InstUnion,
+    marked: bool = false,
+
+    pub fn init(instance: anytype) Obj {
+        const T = @TypeOf(instance);
+
+        inline for (@typeInfo(InstUnion).@"union".fields) |fi| {
+            if (fi.type == T) {
+                const x = @unionInit(InstUnion, fi.name, instance);
+                return .{ .instance = x, .marked = false };
+            }
+        }
+        @compileError("Invalid type");
+    }
+
+    fn equals(self: *Obj, other: *Obj) bool {
+        switch (self.instance) {
+            .String => |s| return std.mem.eql(u8, s, other.instance.String),
             else => return false,
         }
     }
 
-    pub fn asValue(self: Obj) Value {
+    pub fn asValue(self: *Obj) Value {
         return .{ .Obj = self };
     }
 };
@@ -105,6 +116,7 @@ pub const StringObj = []const u8;
 pub const FuncObj = struct {
     arity: u8,
     chunk: inst.Chunk,
+    namePtr: ?*Obj,
     name: ?StringObj,
     upvalueCount: usize = 0,
 

@@ -228,7 +228,7 @@ pub const Chunk = struct {
                 const c = self.constants.items[cLoc];
                 value.printValue(c);
                 std.debug.print("\n", .{});
-                const f = c.Obj.Func;
+                const f = c.Obj.instance.Func;
                 for (0..f.upvalueCount) |_| {
                     const typ = switch (self.code.items[offset]) {
                         1 => "local",

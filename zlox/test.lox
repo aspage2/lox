@@ -17,4 +17,6 @@ var f = closure();
 
 print f();
 print f();
+print "hi";
+print "what" + "2";
 

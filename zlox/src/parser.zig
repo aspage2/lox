@@ -279,7 +279,9 @@ fn function(self: *Parser, typ: Compiler.FuncType) !void {
 
     // Assign the name of the function
     if (typ != .Script) {
-        self.compiler.function.name = try self.heap.strings.make(self.previous.data);
+        const sobj = try self.heap.allocateString(self.previous.data);
+        self.compiler.function.namePtr = sobj;
+        self.compiler.function.name = sobj.instance.String;
     }
 
     // Define the scope NOW so the parsed variables below are
@@ -309,11 +311,11 @@ fn function(self: *Parser, typ: Compiler.FuncType) !void {
     // compiler saves the function definition as a constant and emits
     // a CLOSURE command. This command tells lox to create a new closure
     // from this function based on the current stack slots in the VM.
-    const f = try self.makeConstant(.{ .Obj = .{ .Func = func } });
+    const f = try self.makeConstant(func.asValue());
 
     // CLOSURE {func obj} {uv1.isLocal} {uv1.index} {uv2.isLocal} {uv2.index} [...]
     try self.emitTwo(.Closure, f);
-    for (0..func.upvalueCount) |i| {
+    for (0..func.instance.Func.upvalueCount) |i| {
         const uv = newCompiler.upvalues.items[i];
         try self.emitByte(if (uv.isLocal) 1 else 0);
         try self.emitByte(uv.index);
@@ -395,7 +397,7 @@ fn detectRedefinition(self: *Parser, tok: Token) bool {
 /// Create a string constant in this chunk out of the given token span.
 fn identifierConstant(self: *Parser, tok: Token) !u8 {
     const sobj = try self.heap.allocateString(tok.data);
-    return try self.makeConstant(.{ .Obj = .{ .String = sobj } });
+    return try self.makeConstant(sobj.asValue());
 }
 
 inline fn identifiersEqual(a: Token, b: Token) bool {
@@ -619,7 +621,7 @@ fn grouping(self: *Parser, _: bool) !void {
 
 fn string(self: *Parser, _: bool) !void {
     const sobj = try self.heap.allocateString(self.previous.data);
-    try self.emitConstant(.{ .Obj = .{ .String = sobj } });
+    try self.emitConstant(sobj.asValue());
 }
 
 fn variable(self: *Parser, canParse: bool) !void {
@@ -819,10 +821,10 @@ fn emitReturn(self: *Parser) !void {
 /// Complete the compilation of the function or script.
 /// discards the current compiler and sets the parser compiler
 /// to the parent compiler.
-pub fn endCompiler(self: *Parser) !*value.FuncObj {
+pub fn endCompiler(self: *Parser) !*value.Obj {
     try self.emitReturn();
 
-    const f = self.compiler.function;
+    const f = self.compiler.functionPtr;
     if (build_options.lox_debug and !self.hadError) {
         try self.currentChunk().disassemble(f.name orelse "<script>");
     }
@@ -834,7 +836,7 @@ pub fn compile(
     alloc: std.mem.Allocator,
     source: []const u8,
     heap: *Heap,
-) !?*value.FuncObj {
+) !?*value.Obj{
     var sc: Scanner = .init(source);
     const func = try heap.newFunction();
     var comp: Compiler = undefined;
